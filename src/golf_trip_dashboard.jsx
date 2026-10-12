@@ -1199,17 +1199,9 @@ function RosterRow({ index, player, setPlayers, teams }) {
         />
       </td>
       <td className="py-2 px-2">
-        <input
-          type="number"
-          step="1"
-          min="0"
-          max="99"
-          value={draft.handicap}
-          onChange={(e) => set('handicap', e.target.value.replace(/\D/g, '').slice(0, 2))}
-          onKeyDown={onEnter}
-          className="font-mono text-sm w-full text-right bg-transparent outline-none rounded px-2 py-1.5"
-          style={{ border: `1px solid ${dirty ? C.gold : C.rule}`, color: C.greenDk }}
-        />
+        <div className="font-mono text-sm w-full text-right px-2 py-1.5" style={{ color: C.greenDk }}>
+          {draft.handicap || '—'}
+        </div>
       </td>
       <td className="py-2 px-2">
         <div className="text-sm px-2 py-1.5" style={{ color: draft.team ? C.greenDk : '#bfb89e' }}>
@@ -1363,14 +1355,9 @@ function RosterCardMobile({ index, player, setPlayers, teams }) {
       <div className="grid grid-cols-2 gap-3 mb-3">
         <div>
           <div className={labelCls} style={labelStyle}>Handicap</div>
-          <input
-            type="text"
-            inputMode="numeric"
-            value={draft.handicap}
-            onChange={(e) => set('handicap', e.target.value.replace(/\D/g, '').slice(0, 2))}
-            className="font-mono text-sm w-full bg-transparent outline-none rounded px-2 py-1.5 mt-1"
-            style={{ border: `1px solid ${dirty ? C.gold : C.rule}`, color: C.greenDk }}
-          />
+          <div className="font-mono text-sm px-2 py-1.5 mt-1" style={{ color: C.greenDk }}>
+            {draft.handicap || '—'}
+          </div>
         </div>
         <div>
           <div className={labelCls} style={labelStyle}>Team</div>
@@ -2185,12 +2172,31 @@ function teeColor(tee) {
 // ============================================================
 // SCORECARD — pick a day, then enter scores for every player
 // ============================================================
+const SCORECARD_PASSWORD = 'dw2026!';
+const SCORECARD_UNLOCK_KEY = 'dw-invitational-scorecard-unlocked';
+
 function Scorecard({ players, scores, setScores, teams, groups }) {
   const [activeRound, setActiveRound] = useState(ROUNDS[0].id);
   const round = ROUNDS.find((r) => r.id === activeRound);
   const course = COURSES.find((c) => c.id === round.courseId);
+  const [unlocked, setUnlocked] = useState(() => {
+    try { return sessionStorage.getItem(SCORECARD_UNLOCK_KEY) === '1'; } catch { return false; }
+  });
+  const [pwAttempt, setPwAttempt] = useState('');
+  const [pwError, setPwError] = useState(false);
+
+  const tryUnlock = () => {
+    if (pwAttempt === SCORECARD_PASSWORD) {
+      setUnlocked(true);
+      setPwError(false);
+      try { sessionStorage.setItem(SCORECARD_UNLOCK_KEY, '1'); } catch {}
+    } else {
+      setPwError(true);
+    }
+  };
 
   const setHole = (playerId, holeIdx, value) => {
+    if (!unlocked) return;
     const v = parseInt(value, 10);
     setScores((prev) => {
       const next = { ...prev };
@@ -2205,6 +2211,36 @@ function Scorecard({ players, scores, setScores, teams, groups }) {
   return (
     <section className="mt-10">
       <SectionTitle eyebrow="Post a Score" title="The Scorecard" />
+
+      {!unlocked && (
+        <div className="mb-8 mx-auto max-w-md p-5 rounded" style={{ background: C.creamLt, border: `1px solid ${C.rule}` }}>
+          <div className="smallcaps text-[11px] mb-2" style={{ color: C.goldDk }}>Score Entry Locked</div>
+          <div className="text-sm mb-3" style={{ color: C.ink }}>
+            Enter the scorekeeper password to post or edit scores.
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={pwAttempt}
+              onChange={(e) => { setPwAttempt(e.target.value); setPwError(false); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') tryUnlock(); }}
+              placeholder="Password"
+              className="flex-1 text-sm bg-white outline-none rounded px-3 py-2"
+              style={{ border: `1px solid ${pwError ? '#B0413E' : C.rule}`, color: C.ink }}
+            />
+            <button
+              onClick={tryUnlock}
+              className="smallcaps text-[11px] px-4 py-2 rounded"
+              style={{ background: C.greenDk, color: C.gold, border: `1px solid ${C.greenDk}` }}
+            >
+              Unlock
+            </button>
+          </div>
+          {pwError && (
+            <div className="text-[11px] mt-2" style={{ color: '#B0413E' }}>Incorrect password.</div>
+          )}
+        </div>
+      )}
 
       {/* DAY SELECTOR */}
       <div className="grid md:grid-cols-3 gap-4 mb-10">
@@ -2250,6 +2286,7 @@ function Scorecard({ players, scores, setScores, teams, groups }) {
             round={round}
             allPlayers={players}
             groups={groups}
+            disabled={!unlocked}
             playerScores={scores?.[activeRound]?.[p.id] || Array(18).fill(null)}
             onSetHole={(holeIdx, value) => setHole(p.id, holeIdx, value)}
           />
@@ -2280,7 +2317,7 @@ function StrokeDots({ n }) {
   );
 }
 
-function PlayerScorecard({ player, course, teams, round, allPlayers, groups, playerScores, onSetHole }) {
+function PlayerScorecard({ player, course, teams, round, allPlayers, groups, playerScores, onSetHole, disabled }) {
   const teamName = (teams || []).find((t) => t.id === player.team)?.name || player.team;
   const isMobile = useIsMobile();
   const front = course.holes.slice(0, 9);
@@ -2340,6 +2377,7 @@ function PlayerScorecard({ player, course, teams, round, allPlayers, groups, pla
             playerScores={playerScores}
             onSetHole={onSetHole}
             strokes={strokes}
+            disabled={disabled}
           />
           <NineTable
             label="Back 9"
@@ -2349,6 +2387,7 @@ function PlayerScorecard({ player, course, teams, round, allPlayers, groups, pla
             playerScores={playerScores}
             onSetHole={onSetHole}
             strokes={strokes}
+            disabled={disabled}
             grandTotal={total}
             grandTotalPar={totalPar}
           />
@@ -2393,7 +2432,7 @@ function PlayerScorecard({ player, course, teams, round, allPlayers, groups, pla
                 <td className="py-1.5 px-2 smallcaps text-[10px]" style={{ color: C.goldDk }}>Score</td>
                 {front.map((h, i) => (
                   <td key={h.hole} className="py-0.5 px-0.5">
-                    <ScoreInput value={playerScores[i]} par={h.par} onChange={(v) => onSetHole(i, v)} />
+                    <ScoreInput value={playerScores[i]} par={h.par} onChange={(v) => onSetHole(i, v)} disabled={disabled} />
                   </td>
                 ))}
                 <td className="py-1.5 px-1 font-mono text-center font-bold" style={{ color: C.greenDk }}>
@@ -2401,7 +2440,7 @@ function PlayerScorecard({ player, course, teams, round, allPlayers, groups, pla
                 </td>
                 {back.map((h, i) => (
                   <td key={h.hole} className="py-0.5 px-0.5">
-                    <ScoreInput value={playerScores[i + 9]} par={h.par} onChange={(v) => onSetHole(i + 9, v)} />
+                    <ScoreInput value={playerScores[i + 9]} par={h.par} onChange={(v) => onSetHole(i + 9, v)} disabled={disabled} />
                   </td>
                 ))}
                 <td className="py-1.5 px-1 font-mono text-center font-bold" style={{ color: C.greenDk }}>
@@ -2419,7 +2458,7 @@ function PlayerScorecard({ player, course, teams, round, allPlayers, groups, pla
   );
 }
 
-function NineTable({ label, totalLabel, holes, holeOffset, playerScores, onSetHole, strokes, grandTotal, grandTotalPar }) {
+function NineTable({ label, totalLabel, holes, holeOffset, playerScores, onSetHole, strokes, disabled, grandTotal, grandTotalPar }) {
   const sumPar = holes.reduce((a, h) => a + h.par, 0);
   const sumScore = holes.reduce(
     (a, _h, i) => a + (Number.isFinite(playerScores[i + holeOffset]) ? playerScores[i + holeOffset] : 0),
@@ -2455,7 +2494,7 @@ function NineTable({ label, totalLabel, holes, holeOffset, playerScores, onSetHo
             <td className="py-1 px-1 smallcaps text-[10px]" style={{ color: C.goldDk }}>Score</td>
             {holes.map((h, i) => (
               <td key={h.hole} className="py-0.5 px-0.5">
-                <ScoreInput value={playerScores[i + holeOffset]} par={h.par} onChange={(v) => onSetHole(i + holeOffset, v)} />
+                <ScoreInput value={playerScores[i + holeOffset]} par={h.par} onChange={(v) => onSetHole(i + holeOffset, v)} disabled={disabled} />
               </td>
             ))}
             <td className="py-1 px-1 font-mono text-center font-bold" style={{ color: C.greenDk }}>
@@ -2477,7 +2516,7 @@ function NineTable({ label, totalLabel, holes, holeOffset, playerScores, onSetHo
   );
 }
 
-function ScoreInput({ value, par, onChange }) {
+function ScoreInput({ value, par, onChange, disabled }) {
   const filled = Number.isFinite(value);
   const diff = filled ? value - par : 0;
   // Augusta-style score color
@@ -2494,7 +2533,9 @@ function ScoreInput({ value, par, onChange }) {
       type="text"
       inputMode="numeric"
       value={value ?? ''}
+      readOnly={disabled}
       onChange={(e) => {
+        if (disabled) return;
         const digits = e.target.value.replace(/\D/g, '').slice(0, 2);
         onChange(digits);
       }}
