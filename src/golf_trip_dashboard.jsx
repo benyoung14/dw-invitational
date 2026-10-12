@@ -182,6 +182,14 @@ const roundTotal = (scores, playerId, roundId) => {
   return { total, filled };
 };
 
+// Display label with handicap: "Spencer Friend (10)".
+// Falls back to just the name if no finite handicap is set.
+const playerLabel = (p) => {
+  if (!p) return '';
+  const hcp = Math.round(p.handicap ?? NaN);
+  return Number.isFinite(hcp) ? `${p.name} (${hcp})` : p.name;
+};
+
 // Return the group a player is in for a given round, or null.
 const findPlayerGroup = (playerId, roundId, groups) =>
   (groups?.[roundId] || []).find((g) => (g.playerIds || []).includes(playerId)) || null;
@@ -790,7 +798,7 @@ function Leaderboard({ players, scores, teams, groups }) {
           </thead>
           <tbody>
             {teamTotals.map((row, i) => {
-              const members = players.filter((p) => p.team === row.team.id).map((p) => p.name).join(', ');
+              const members = players.filter((p) => p.team === row.team.id).map(playerLabel).join(', ');
               const leader = i === 0 && row.total > 0;
               return (
                 <tr key={row.team.id} className="border-t" style={{ borderColor: C.rule, background: leader ? '#FBF5DF' : 'transparent' }}>
@@ -843,7 +851,7 @@ function Leaderboard({ players, scores, teams, groups }) {
                   </td>
                   <td className="py-3 px-1 md:px-3 font-display text-base md:text-lg">
                     <div className="leading-tight truncate">
-                      {row.player.name}
+                      {playerLabel(row.player)}
                       {leader && <Trophy size={14} className="inline ml-2" style={{ color: C.gold }} />}
                     </div>
                     <div className="md:hidden text-[10px] smallcaps font-body" style={{ color: '#6b6555' }}>
@@ -983,7 +991,8 @@ function Schedule({ players, groups, setGroups }) {
                         </div>
                         <div className="grid grid-cols-1 gap-1.5">
                           {g.playerIds.map((pid, slotIdx) => {
-                            const assignedName = players.find((p) => p.id === pid)?.name || '';
+                            const assignedPlayer = players.find((p) => p.id === pid);
+                            const assignedName = assignedPlayer ? playerLabel(assignedPlayer) : '';
                             if (r.pairingsLocked) {
                               if (!pid) return null;
                               return (
@@ -1008,7 +1017,7 @@ function Schedule({ players, groups, setGroups }) {
                                 {players
                                   .filter((p) => p.id === pid || !taken.has(p.id))
                                   .map((p) => (
-                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                    <option key={p.id} value={p.id}>{playerLabel(p)}</option>
                                   ))}
                               </select>
                             );
@@ -1715,7 +1724,7 @@ function CarpoolSuggestions({ players }) {
                             return (
                               <li key={p.id} className="font-display text-base flex items-center justify-between" style={{ color: C.ink }}>
                                 <span className="flex items-center gap-2">
-                                  {p.name}
+                                  {playerLabel(p)}
                                   {isDriver && (
                                     <span className="smallcaps text-[9px] px-1.5 py-0.5 rounded" style={{ background: C.gold, color: C.greenDkr }}>
                                       Driver
@@ -1744,13 +1753,13 @@ function CarpoolSuggestions({ players }) {
           {lonelyRenters.length > 0 && (
             <div className="p-4 rounded" style={{ background: C.creamLt, border: `1px solid ${C.rule}` }}>
               <div className="smallcaps text-[10px] mb-2" style={{ color: C.goldDk }}>Renting a car (no arrival info yet)</div>
-              <div style={{ color: C.ink }}>{lonelyRenters.map((p) => p.name).join(', ')}</div>
+              <div style={{ color: C.ink }}>{lonelyRenters.map(playerLabel).join(', ')}</div>
             </div>
           )}
           {incomplete.length > 0 && (
             <div className="p-4 rounded" style={{ background: C.creamLt, border: `1px solid ${C.rule}` }}>
               <div className="smallcaps text-[10px] mb-2" style={{ color: C.goldDk }}>Missing arrival info</div>
-              <div style={{ color: C.ink }}>{incomplete.map((p) => p.name).join(', ')}</div>
+              <div style={{ color: C.ink }}>{incomplete.map(playerLabel).join(', ')}</div>
             </div>
           )}
         </div>
@@ -2294,8 +2303,7 @@ function PlayerScorecard({ player, course, teams, round, allPlayers, groups, pla
       {/* Player header */}
       <div className="px-4 py-3 flex items-center justify-between" style={{ background: C.greenDk, color: C.cream }}>
         <div className="flex items-baseline gap-3 flex-wrap">
-          <span className="font-display text-xl">{player.name}</span>
-          <span className="smallcaps text-[11px]" style={{ color: C.gold }}>HCP {player.handicap}</span>
+          <span className="font-display text-xl">{playerLabel(player)}</span>
           {player.team && (
             <span
               className="smallcaps text-[10px] px-2 py-0.5 rounded-full"
