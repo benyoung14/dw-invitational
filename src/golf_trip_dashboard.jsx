@@ -34,21 +34,21 @@ const COURSE_IMGS = {
 // PLACEHOLDER DATA — replace with your trip's real info
 // ============================================================
 const INITIAL_PLAYERS = [
-  { id: 'p1',  name: 'Barta',   handicap: 10, team: 't1' },
-  { id: 'p2',  name: 'Wydom',   handicap: 10, team: 't1' },
-  { id: 'p3',  name: 'DW',      handicap: 10, team: 't1' },
-  { id: 'p4',  name: 'Tommy',   handicap: 10, team: 't2' },
-  { id: 'p5',  name: 'Kimbo',   handicap: 10, team: 't2' },
-  { id: 'p6',  name: 'Spencer', handicap: 10, team: 't2' },
-  { id: 'p7',  name: 'Ben',     handicap: 19, team: 't3' },
-  { id: 'p8',  name: 'Conrad',  handicap: 10, team: 't3' },
-  { id: 'p9',  name: 'Shawn',   handicap: 10, team: 't3' },
-  { id: 'p10', name: 'Ian',     handicap: 19, team: 't4' },
-  { id: 'p11', name: 'Nick',    handicap: 20, team: 't4' },
-  { id: 'p12', name: 'Henry',   handicap: 21, team: 't4' },
-  { id: 'p13', name: 'Chad',    handicap: 10, team: 't5' },
-  { id: 'p14', name: 'Tom',     handicap: 10, team: 't5' },
-  { id: 'p15', name: 'Warenda', handicap: 10, team: 't5' },
+  { id: 'p1',  name: 'Frank Barta',    handicap: 10, team: 't1' },
+  { id: 'p2',  name: 'Marc Wydom',     handicap: 10, team: 't1' },
+  { id: 'p3',  name: 'Donnie Muller',  handicap: 10, team: 't1' },
+  { id: 'p4',  name: 'Tommy Duncan',   handicap: 10, team: 't2' },
+  { id: 'p5',  name: 'Jason Kimbo',    handicap: 10, team: 't2' },
+  { id: 'p6',  name: 'Spencer Friend', handicap: 10, team: 't2' },
+  { id: 'p7',  name: 'Ben Young',      handicap: 19, team: 't3' },
+  { id: 'p8',  name: 'Justin Conrad',  handicap: 10, team: 't3' },
+  { id: 'p9',  name: 'Shawn McMaster', handicap: 10, team: 't3' },
+  { id: 'p10', name: 'Ian Dempsey',    handicap: 19, team: 't4' },
+  { id: 'p11', name: 'Nick Roy',       handicap: 20, team: 't4' },
+  { id: 'p12', name: 'Henry Holst',    handicap: 21, team: 't4' },
+  { id: 'p13', name: 'Chad Stone',     handicap: 10, team: 't5' },
+  { id: 'p14', name: 'Tom Devine',     handicap: 10, team: 't5' },
+  { id: 'p15', name: 'Mike Warenda',   handicap: 10, team: 't5' },
 ];
 
 // ============================================================
@@ -140,9 +140,9 @@ const COURSES = [
 ];
 
 const ROUNDS = [
-  { id: 'r1', day: 'Thursday', date: 'Nov 5', course: 'Tom Watson',     courseId: 'watson',   format: 'bestball2net', par: 72, tees: ['Gold', 'Blue'], label: 'Round I · Tom Watson' },
-  { id: 'r2', day: 'Friday',   date: 'Nov 6', course: 'Arnold Palmer',  courseId: 'palmer',   format: 'bestball2net', par: 72, tees: ['Gold'],         label: 'Round II · Arnold Palmer' },
-  { id: 'r3', day: 'Saturday', date: 'Nov 7', course: 'Jack Nicklaus',  courseId: 'nicklaus', format: 'netstroke',    par: 72, tees: ['Blue'],         label: 'Round III · Jack Nicklaus' },
+  { id: 'r1', day: 'Thursday', date: 'Nov 5', course: 'Tom Watson',     courseId: 'watson',   format: 'bestball2net', par: 72, tees: ['Gold', 'Blue'], label: 'Round I · Tom Watson',     pairingsLocked: true  },
+  { id: 'r2', day: 'Friday',   date: 'Nov 6', course: 'Arnold Palmer',  courseId: 'palmer',   format: 'bestball2net', par: 72, tees: ['Gold'],         label: 'Round II · Arnold Palmer', pairingsLocked: true  },
+  { id: 'r3', day: 'Saturday', date: 'Nov 7', course: 'Jack Nicklaus',  courseId: 'nicklaus', format: 'netstroke',    par: 72, tees: ['Blue'],         label: 'Round III · Jack Nicklaus', pairingsLocked: false },
 ];
 
 // ============================================================
@@ -381,15 +381,29 @@ const INITIAL_TEAMS = [
   { id: 't5', name: 'Team 5' },
 ];
 
-const INITIAL_GROUPS = ROUNDS.reduce((acc, r) => {
-  acc[r.id] = Array.from({ length: 4 }, (_, i) => ({
-    id: `g${i + 1}`,
-    name: `Group ${i + 1}`,
-    teeTime: '',
-    playerIds: ['', '', '', ''],
-  }));
-  return acc;
-}, {});
+const INITIAL_GROUPS = {
+  // Round I · Watson · Thursday 11/5 — locked pairings
+  r1: [
+    { id: 'g1', name: 'Group 1', teeTime: '11:00 AM', playerIds: ['p6',  'p10', 'p12', ''  ] },
+    { id: 'g2', name: 'Group 2', teeTime: '11:10 AM', playerIds: ['p11', 'p7',  'p8',  'p9'] },
+    { id: 'g3', name: 'Group 3', teeTime: '11:20 AM', playerIds: ['p4',  'p1',  'p3',  'p2'] },
+    { id: 'g4', name: 'Group 4', teeTime: '11:30 AM', playerIds: ['p13', 'p14', 'p15', 'p5'] },
+  ],
+  // Round II · Palmer · Friday 11/6 — locked pairings
+  r2: [
+    { id: 'g1', name: 'Group 1', teeTime: '10:50 AM', playerIds: ['p4',  'p13', 'p9',  ''  ] },
+    { id: 'g2', name: 'Group 2', teeTime: '11:00 AM', playerIds: ['p2',  'p14', 'p12', 'p8'] },
+    { id: 'g3', name: 'Group 3', teeTime: '11:10 AM', playerIds: ['p1',  'p15', 'p7',  'p10'] },
+    { id: 'g4', name: 'Group 4', teeTime: '11:20 AM', playerIds: ['p6',  'p11', 'p3',  'p5'] },
+  ],
+  // Round III · Nicklaus · Saturday 11/7 — pairings set after R2 based on standings
+  r3: [
+    { id: 'g1', name: 'Group 1', teeTime: '10:50 AM', playerIds: ['', '', '', ''] },
+    { id: 'g2', name: 'Group 2', teeTime: '11:00 AM', playerIds: ['', '', '', ''] },
+    { id: 'g3', name: 'Group 3', teeTime: '11:10 AM', playerIds: ['', '', '', ''] },
+    { id: 'g4', name: 'Group 4', teeTime: '11:20 AM', playerIds: ['', '', '', ''] },
+  ],
+};
 
 export default function GolfTripDashboard() {
   const [tab, setTab] = useState('leaderboard');
@@ -968,22 +982,37 @@ function Schedule({ players, groups, setGroups }) {
                           </div>
                         </div>
                         <div className="grid grid-cols-1 gap-1.5">
-                          {g.playerIds.map((pid, slotIdx) => (
-                            <select
-                              key={slotIdx}
-                              value={pid}
-                              onChange={(e) => updateGroupSlot(r.id, g.id, slotIdx, e.target.value)}
-                              className="text-sm w-full bg-white outline-none rounded px-2 py-1.5"
-                              style={{ border: `1px solid ${C.rule}`, color: pid ? C.ink : '#bfb89e' }}
-                            >
-                              <option value="">— Player {slotIdx + 1} —</option>
-                              {players
-                                .filter((p) => p.id === pid || !taken.has(p.id))
-                                .map((p) => (
-                                  <option key={p.id} value={p.id}>{p.name}</option>
-                                ))}
-                            </select>
-                          ))}
+                          {g.playerIds.map((pid, slotIdx) => {
+                            const assignedName = players.find((p) => p.id === pid)?.name || '';
+                            if (r.pairingsLocked) {
+                              if (!pid) return null;
+                              return (
+                                <div
+                                  key={slotIdx}
+                                  className="text-sm w-full bg-white rounded px-2 py-1.5"
+                                  style={{ border: `1px solid ${C.rule}`, color: C.ink }}
+                                >
+                                  {assignedName || '—'}
+                                </div>
+                              );
+                            }
+                            return (
+                              <select
+                                key={slotIdx}
+                                value={pid}
+                                onChange={(e) => updateGroupSlot(r.id, g.id, slotIdx, e.target.value)}
+                                className="text-sm w-full bg-white outline-none rounded px-2 py-1.5"
+                                style={{ border: `1px solid ${C.rule}`, color: pid ? C.ink : '#bfb89e' }}
+                              >
+                                <option value="">— Player {slotIdx + 1} —</option>
+                                {players
+                                  .filter((p) => p.id === pid || !taken.has(p.id))
+                                  .map((p) => (
+                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                  ))}
+                              </select>
+                            );
+                          })}
                         </div>
                       </div>
                     ));
@@ -1174,17 +1203,9 @@ function RosterRow({ index, player, setPlayers, teams }) {
         />
       </td>
       <td className="py-2 px-2">
-        <select
-          value={draft.team}
-          onChange={(e) => set('team', e.target.value)}
-          className="text-sm w-full bg-transparent outline-none rounded px-2 py-1.5"
-          style={{ border: `1px solid ${dirty ? C.gold : C.rule}`, color: draft.team ? C.greenDk : '#bfb89e' }}
-        >
-          <option value="">—</option>
-          {(teams || []).map((t) => (
-            <option key={t.id} value={t.id}>{t.name || t.id}</option>
-          ))}
-        </select>
+        <div className="text-sm px-2 py-1.5" style={{ color: draft.team ? C.greenDk : '#bfb89e' }}>
+          {(teams || []).find((t) => t.id === draft.team)?.name || '—'}
+        </div>
       </td>
       <td className="py-2 px-2">{cellInput('departureCity', { placeholder: 'New York' })}</td>
       <td className="py-2 px-2">
@@ -1344,17 +1365,9 @@ function RosterCardMobile({ index, player, setPlayers, teams }) {
         </div>
         <div>
           <div className={labelCls} style={labelStyle}>Team</div>
-          <select
-            value={draft.team}
-            onChange={(e) => set('team', e.target.value)}
-            className="text-sm w-full bg-transparent outline-none rounded px-2 py-1.5 mt-1"
-            style={{ border: `1px solid ${dirty ? C.gold : C.rule}`, color: draft.team ? C.greenDk : '#bfb89e' }}
-          >
-            <option value="">—</option>
-            {(teams || []).map((t) => (
-              <option key={t.id} value={t.id}>{t.name || t.id}</option>
-            ))}
-          </select>
+          <div className="text-sm px-2 py-1.5 mt-1" style={{ color: draft.team ? C.greenDk : '#bfb89e' }}>
+            {(teams || []).find((t) => t.id === draft.team)?.name || '—'}
+          </div>
         </div>
       </div>
 
