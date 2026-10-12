@@ -406,7 +406,7 @@ const INITIAL_GROUPS = {
   ],
   // Round III · Nicklaus · Saturday 11/7 — pairings set after R2 based on standings
   r3: [
-    { id: 'g1', name: 'Group 1', teeTime: '10:50 AM', playerIds: ['', '', '', ''] },
+    { id: 'g1', name: 'Group 1', teeTime: '10:50 AM', playerIds: ['', '', ''] },
     { id: 'g2', name: 'Group 2', teeTime: '11:00 AM', playerIds: ['', '', '', ''] },
     { id: 'g3', name: 'Group 3', teeTime: '11:10 AM', playerIds: ['', '', '', ''] },
     { id: 'g4', name: 'Group 4', teeTime: '11:20 AM', playerIds: ['', '', '', ''] },
