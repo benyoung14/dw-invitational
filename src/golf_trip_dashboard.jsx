@@ -34,21 +34,21 @@ const COURSE_IMGS = {
 // PLACEHOLDER DATA — replace with your trip's real info
 // ============================================================
 const INITIAL_PLAYERS = [
-  { id: 'p1',  name: 'Frank Barta',    handicap: 10, team: 't1' },
-  { id: 'p2',  name: 'Marc Wydom',     handicap: 10, team: 't1' },
-  { id: 'p3',  name: 'Donnie Muller',  handicap: 10, team: 't1' },
-  { id: 'p4',  name: 'Tommy Duncan',   handicap: 10, team: 't2' },
-  { id: 'p5',  name: 'Jason Kimbo',    handicap: 10, team: 't2' },
-  { id: 'p6',  name: 'Spencer Friend', handicap: 10, team: 't2' },
-  { id: 'p7',  name: 'Ben Young',      handicap: 19, team: 't3' },
-  { id: 'p8',  name: 'Justin Conrad',  handicap: 10, team: 't3' },
-  { id: 'p9',  name: 'Shawn McMaster', handicap: 10, team: 't3' },
-  { id: 'p10', name: 'Ian Dempsey',    handicap: 19, team: 't4' },
-  { id: 'p11', name: 'Nick Roy',       handicap: 20, team: 't4' },
-  { id: 'p12', name: 'Henry Holst',    handicap: 21, team: 't4' },
-  { id: 'p13', name: 'Chad Stone',     handicap: 10, team: 't5' },
-  { id: 'p14', name: 'Tom Devine',     handicap: 10, team: 't5' },
-  { id: 'p15', name: 'Mike Warenda',   handicap: 10, team: 't5' },
+  { id: 'p1',  name: 'Frank Barta',    handicap: 8,  team: 't1' },
+  { id: 'p2',  name: 'Marc Wydom',     handicap: 16, team: 't1' },
+  { id: 'p3',  name: 'Donnie Muller',  handicap: 19, team: 't1' },
+  { id: 'p4',  name: 'Tommy Duncan',   handicap: 24, team: 't2' },
+  { id: 'p5',  name: 'Jason Kimbo',    handicap: 17, team: 't2' },
+  { id: 'p6',  name: 'Spencer Friend', handicap: 9,  team: 't2' },
+  { id: 'p7',  name: 'Ben Young',      handicap: 18, team: 't3' },
+  { id: 'p8',  name: 'Justin Conrad',  handicap: 30, team: 't3' },
+  { id: 'p9',  name: 'Shawn McMaster', handicap: 19, team: 't3' },
+  { id: 'p10', name: 'Ian Dempsey',    handicap: 21, team: 't4' },
+  { id: 'p11', name: 'Nick Roy',       handicap: 21, team: 't4' },
+  { id: 'p12', name: 'Henry Holst',    handicap: 19, team: 't4' },
+  { id: 'p13', name: 'Chad Stone',     handicap: 23, team: 't5' },
+  { id: 'p14', name: 'Tom Devine',     handicap: 17, team: 't5' },
+  { id: 'p15', name: 'Mike Warenda',   handicap: 21, team: 't5' },
 ];
 
 // ============================================================
