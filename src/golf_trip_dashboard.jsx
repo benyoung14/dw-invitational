@@ -250,8 +250,9 @@ const netForRound = (player, round, scores, course, groups, players) => {
   return { gross: rt.total, net, filled: rt.filled };
 };
 
-// Stableford points using real per-hole par and group-relative strokes.
-// eagle+ = 4, birdie = 3, par = 2, bogey = 1, double or worse = 0.
+// Mankles point quota: eagle+ = 8, birdie = 4, par = 2, bogey = 1,
+// double bogey = 0, triple or worse = -1. Uses real per-hole par and
+// handicap-allocated strokes (field low man).
 const stablefordPoints = (player, round, scores, course, groups, players) => {
   if (!course) return null;
   const roundScores = scores?.[round.id]?.[player.id];
@@ -263,10 +264,12 @@ const stablefordPoints = (player, round, scores, course, groups, players) => {
     filled++;
     const net = gross - strokes[i];
     const diff = net - course.holes[i].par;
-    if (diff <= -2) pts += 4;
-    else if (diff === -1) pts += 3;
+    if (diff <= -2) pts += 8;
+    else if (diff === -1) pts += 4;
     else if (diff === 0) pts += 2;
     else if (diff === 1) pts += 1;
+    else if (diff === 2) pts += 0;
+    else pts -= 1; // triple bogey or worse
   });
   return { points: pts, filled };
 };
@@ -362,16 +365,26 @@ const computeStandings = (rounds, teams, players, scores, courseById, groups) =>
     return { team: t, perRound, total };
   }).sort((a, b) => b.total - a.total);
 
+  // Mankles display: for each round the player posted scores in, the
+  // round value is (handicap + Stableford points). Total sums across
+  // rounds. Unplayed rounds contribute 0.
   const mankles = players.map((p) => {
-    let pts = 0;
+    const hcp = Math.round(p.handicap ?? 0);
+    let total = 0;
     let filled = 0;
-    rounds.forEach((r) => {
+    const perRound = rounds.map((r) => {
       const course = courseById(r.courseId);
       const sp = stablefordPoints(p, r, scores, course, groups, players);
-      if (sp) { pts += sp.points; filled += sp.filled; }
+      if (sp && sp.filled > 0) {
+        const roundValue = hcp + sp.points;
+        total += roundValue;
+        filled += sp.filled;
+        return { points: sp.points, roundValue, played: true };
+      }
+      return { points: 0, roundValue: 0, played: false };
     });
-    return { player: p, points: pts, filled };
-  }).sort((a, b) => b.points - a.points);
+    return { player: p, perRound, total, filled };
+  }).sort((a, b) => b.total - a.total);
 
   return { roundResults, teamTotals, mankles };
 };
@@ -828,7 +841,7 @@ function Leaderboard({ players, scores, teams, groups }) {
       </div>
 
       {/* INDIVIDUAL MANKLES */}
-      <div className="mb-3 smallcaps text-[11px]" style={{ color: C.goldDk }}>Individual Mankles · Total Stableford Points</div>
+      <div className="mb-3 smallcaps text-[11px]" style={{ color: C.goldDk }}>Individual Mankles · Handicap + Points per Round</div>
       <div className="rounded mb-6" style={{ border: `1px solid ${C.rule}`, background: 'white' }}>
         <table className="w-full text-sm tabular table-fixed md:table-auto">
           <thead>
@@ -836,16 +849,19 @@ function Leaderboard({ players, scores, teams, groups }) {
               <th className="py-3 px-1 md:px-3 smallcaps text-[11px] w-9 md:w-12 text-center md:text-left">Pos</th>
               <th className="py-3 px-1 md:px-3 smallcaps text-[11px]">Player</th>
               <th className="hidden md:table-cell py-3 px-2 smallcaps text-[11px] text-right">HCP</th>
-              <th className="py-3 px-1 md:px-3 smallcaps text-[11px] text-right w-14 md:w-auto" style={{ color: C.gold }}>Pts</th>
+              {ROUNDS.map((r, idx) => (
+                <th key={r.id} className="py-3 px-1 md:px-2 smallcaps text-[11px] text-right w-10 md:w-auto">R{idx + 1}</th>
+              ))}
+              <th className="py-3 px-1 md:px-3 smallcaps text-[11px] text-right w-14 md:w-auto" style={{ color: C.gold }}>Total</th>
             </tr>
           </thead>
           <tbody>
             {mankles.map((row, i) => {
-              const leader = i === 0 && row.points > 0;
+              const leader = i === 0 && row.total > 0;
               return (
                 <tr key={row.player.id} className="border-t" style={{ borderColor: C.rule, background: leader ? '#FBF5DF' : 'transparent' }}>
                   <td className="py-3 px-1 md:px-3 font-display text-base md:text-lg text-center md:text-left" style={{ color: leader ? C.goldDk : C.ink }}>
-                    {row.points > 0 ? i + 1 : '—'}
+                    {row.total > 0 ? i + 1 : '—'}
                   </td>
                   <td className="py-3 px-1 md:px-3 font-display text-base md:text-lg">
                     <div className="leading-tight truncate">
@@ -857,8 +873,13 @@ function Leaderboard({ players, scores, teams, groups }) {
                     </div>
                   </td>
                   <td className="hidden md:table-cell py-3 px-2 text-right text-xs" style={{ color: '#6b6555' }}>{row.player.handicap}</td>
-                  <td className="py-3 px-1 md:px-3 text-right font-display text-base md:text-lg font-mono" style={{ color: row.points > 0 ? C.greenDk : '#bfb89e' }}>
-                    {row.points > 0 ? row.points : '—'}
+                  {row.perRound.map((rd, idx) => (
+                    <td key={idx} className="py-3 px-1 md:px-2 text-right align-middle text-xs md:text-sm font-mono" style={{ color: rd.played ? C.ink : '#bfb89e' }}>
+                      {rd.played ? rd.roundValue : '—'}
+                    </td>
+                  ))}
+                  <td className="py-3 px-1 md:px-3 text-right font-display text-base md:text-lg font-mono" style={{ color: row.total > 0 ? C.greenDk : '#bfb89e' }}>
+                    {row.total > 0 ? row.total : '—'}
                   </td>
                 </tr>
               );
@@ -870,7 +891,8 @@ function Leaderboard({ players, scores, teams, groups }) {
       <p className="mt-4 text-xs italic" style={{ color: '#6b6555' }}>
         R1 & R2 are team best-ball (2 lowest net per hole) · Teams rank 1–5 → 20/15/10/5/0 pts.
         R3 is singles net stroke · Each player's net rank → 15, 14… 1 pt to their team.
-        Mankles = total Stableford points across all three rounds.
+        Mankles each round = handicap + Stableford points earned
+        (Eagle 8 · Birdie 4 · Par 2 · Bogey 1 · Double 0 · Triple+ −1).
       </p>
     </section>
   );
