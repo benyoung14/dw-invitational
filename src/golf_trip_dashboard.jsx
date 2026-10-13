@@ -250,20 +250,20 @@ const netForRound = (player, round, scores, course, groups, players) => {
   return { gross: rt.total, net, filled: rt.filled };
 };
 
-// Mankles point quota: eagle+ = 8, birdie = 4, par = 2, bogey = 1,
-// double bogey = 0, triple or worse = -1. Uses real per-hole par and
-// handicap-allocated strokes (field low man).
+// Mankles point quota based on GROSS score vs par (no handicap strokes
+// applied — handicap is added as a bonus to the round total in the
+// leaderboard). Eagle+ = 8, Birdie = 4, Par = 2, Bogey = 1,
+// Double = 0, Triple or worse = -1.
+// `groups` and `players` are accepted for signature stability but unused.
 const stablefordPoints = (player, round, scores, course, groups, players) => {
   if (!course) return null;
   const roundScores = scores?.[round.id]?.[player.id];
   if (!roundScores) return null;
-  const strokes = strokesForRound(player, round, groups, players, course);
   let pts = 0, filled = 0;
   roundScores.forEach((gross, i) => {
     if (!Number.isFinite(gross)) return;
     filled++;
-    const net = gross - strokes[i];
-    const diff = net - course.holes[i].par;
+    const diff = gross - course.holes[i].par;
     if (diff <= -2) pts += 8;
     else if (diff === -1) pts += 4;
     else if (diff === 0) pts += 2;
