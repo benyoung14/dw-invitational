@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, Fragment as ReactFragment } from 'react';
+const React = { Fragment: ReactFragment };
 import { Trophy, Calendar, Users, ClipboardList, Flag, ChevronLeft, ChevronRight, Shield } from 'lucide-react';
 import logoUrl from './assets/logo.svg';
 import { supabase, TABLE, SHARED_ROW_ID } from './supabase';
@@ -1830,6 +1831,7 @@ function Teams({ players, scores, teams, setTeams, groups }) {
 
 function TeamCard({ rank, team, members, roundResults, perRoundPoints, total, fmtPts, onRename }) {
   const hasAny = total > 0;
+  const [openRound, setOpenRound] = useState(null);
   return (
     <div className="rounded overflow-hidden" style={{ background: 'white', border: `1px solid ${C.rule}` }}>
       <div className="px-5 py-4 flex items-center justify-between" style={{ background: C.greenDk, color: C.cream }}>
@@ -1887,39 +1889,80 @@ function TeamCard({ rank, team, members, roundResults, perRoundPoints, total, fm
           {ROUNDS.map((r, idx) => {
             const rr = roundResults[idx];
             const pts = perRoundPoints[idx] ?? 0;
+            const course = COURSES.find((c) => c.id === r.courseId);
             let scoreLabel = '—';
             let formatLabel = '—';
+            let bbResult = null;
+            let singlesMembers = [];
             if (r.format === 'bestball2net') {
               formatLabel = 'Best Ball';
-              const bb = rr?.results?.find((x) => x.team.id === team.id);
-              if (bb) {
-                scoreLabel = bb.complete ? `${bb.total} net` : `${bb.filled}/18`;
+              bbResult = rr?.results?.find((x) => x.team.id === team.id);
+              if (bbResult) {
+                scoreLabel = bbResult.complete ? `${bbResult.total} net` : `${bbResult.filled}/18`;
               }
             } else if (r.format === 'netstroke') {
               formatLabel = 'Singles Net';
-              // Sum member net scores where completed
-              const memberNets = members.map((m) =>
-                rr?.sorted?.find((s) => s.p.id === m.id)
-              ).filter(Boolean);
-              if (memberNets.length > 0) {
-                const sum = memberNets.reduce((a, b) => a + b.net, 0);
-                scoreLabel = `${sum} (${memberNets.length}/${members.length})`;
+              singlesMembers = members.map((m) => {
+                const scored = rr?.sorted?.find((s) => s.p.id === m.id);
+                const place = scored ? rr.sorted.indexOf(scored) + 1 : null;
+                const playerPts = rr?.pointsByPlayer?.get(m.id) ?? 0;
+                return { player: m, scored, place, pts: playerPts };
+              });
+              const complete = singlesMembers.filter((x) => x.scored);
+              if (complete.length > 0) {
+                const sum = complete.reduce((a, b) => a + b.scored.net, 0);
+                scoreLabel = `${sum} (${complete.length}/${members.length})`;
               }
             }
+            const isOpen = openRound === r.id;
+            const hasDetail = (bbResult && bbResult.filled > 0) ||
+                              (singlesMembers.some((x) => x.scored));
             return (
-              <tr key={r.id} className="border-t" style={{ borderColor: C.rule }}>
-                <td className="py-2 px-3" style={{ color: C.ink }}>
-                  <div className="font-display">{r.course}</div>
-                  <div className="smallcaps text-[10px]" style={{ color: '#8e8870' }}>
-                    {r.day} · {r.date}
-                  </div>
-                </td>
-                <td className="py-2 px-3 text-right smallcaps text-[10px]" style={{ color: '#6b6555' }}>{formatLabel}</td>
-                <td className="py-2 px-3 text-right font-mono text-xs" style={{ color: C.ink }}>{scoreLabel}</td>
-                <td className="py-2 px-3 text-right font-mono" style={{ color: pts > 0 ? C.greenDk : '#bfb89e' }}>
-                  {pts > 0 ? fmtPts(pts) : '—'}
-                </td>
-              </tr>
+              <React.Fragment key={r.id}>
+                <tr
+                  className="border-t"
+                  style={{ borderColor: C.rule, cursor: hasDetail ? 'pointer' : 'default' }}
+                  onClick={() => hasDetail && setOpenRound(isOpen ? null : r.id)}
+                >
+                  <td className="py-2 px-3" style={{ color: C.ink }}>
+                    <div className="flex items-center gap-1.5">
+                      {hasDetail && (
+                        <ChevronRight
+                          size={12}
+                          style={{
+                            color: C.goldDk,
+                            transform: isOpen ? 'rotate(90deg)' : 'none',
+                            transition: 'transform 150ms',
+                          }}
+                        />
+                      )}
+                      <div>
+                        <div className="font-display">{r.course}</div>
+                        <div className="smallcaps text-[10px]" style={{ color: '#8e8870' }}>
+                          {r.day} · {r.date}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-2 px-3 text-right smallcaps text-[10px]" style={{ color: '#6b6555' }}>{formatLabel}</td>
+                  <td className="py-2 px-3 text-right font-mono text-xs" style={{ color: C.ink }}>{scoreLabel}</td>
+                  <td className="py-2 px-3 text-right font-mono" style={{ color: pts > 0 ? C.greenDk : '#bfb89e' }}>
+                    {pts > 0 ? fmtPts(pts) : '—'}
+                  </td>
+                </tr>
+                {isOpen && hasDetail && (
+                  <tr style={{ background: '#fbfaf5' }}>
+                    <td colSpan={4} className="py-3 px-3">
+                      {r.format === 'bestball2net' && bbResult && (
+                        <BestBallBreakdown course={course} teamMembers={members} bbResult={bbResult} />
+                      )}
+                      {r.format === 'netstroke' && (
+                        <SinglesBreakdown members={singlesMembers} totalPlayers={rr?.results?.length ?? 15} fmtPts={fmtPts} />
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             );
           })}
           <tr className="border-t" style={{ borderColor: C.rule, background: C.creamLt }}>
@@ -1932,6 +1975,148 @@ function TeamCard({ rank, team, members, roundResults, perRoundPoints, total, fm
           </tr>
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function BestBallBreakdown({ course, teamMembers, bbResult }) {
+  // Build per-player net scores for this round using the team-best-ball
+  // result object. The team's members are the players; we recompute nets
+  // from the result's cached scores if available, otherwise derive from
+  // the members list.
+  if (!course || !bbResult) return null;
+  const front = Array.from({ length: 9 }, (_, i) => i);
+  const back = Array.from({ length: 9 }, (_, i) => i + 9);
+
+  // bbResult.perHole has the sum of 2 lowest nets per hole; to show
+  // which members contributed, recompute each member's net array.
+  const allNets = teamMembers.map((p) => {
+    // Try to find a scored record; otherwise null row.
+    // We need their net on each hole; recompute from the course + their
+    // gross/strokes using the global helpers.
+    return { player: p, nets: null };
+  });
+
+  // The team result doesn't carry per-member net arrays; instead we
+  // store the counted indices to highlight. For a lightweight display,
+  // just show the team's hole-by-hole best-ball picks and totals.
+  const perHoleCell = (holeIdx) => {
+    const v = bbResult.perHole[holeIdx];
+    return (
+      <td
+        key={holeIdx}
+        className="py-1 px-1 font-mono text-[11px] text-center"
+        style={{ color: Number.isFinite(v) ? C.ink : '#bfb89e' }}
+      >
+        {Number.isFinite(v) ? v : '—'}
+      </td>
+    );
+  };
+
+  const sumRange = (idxs) => idxs.reduce((a, i) => a + (bbResult.perHole[i] ?? 0), 0);
+
+  return (
+    <div>
+      <div className="smallcaps text-[10px] mb-2" style={{ color: C.goldDk }}>
+        Best-ball net per hole · sum of 2 lowest member nets
+      </div>
+      <div className="overflow-x-auto rounded" style={{ border: `1px solid ${C.rule}`, background: 'white' }}>
+        <table className="w-full text-xs tabular">
+          <thead>
+            <tr style={{ background: C.creamLt }}>
+              <th className="py-1 px-1 smallcaps text-[10px] text-left" style={{ color: '#8e8870' }}>Hole</th>
+              {front.map((i) => (
+                <th key={i} className="py-1 px-1 font-mono text-[10px]" style={{ color: C.greenDk }}>{i + 1}</th>
+              ))}
+              <th className="py-1 px-1 smallcaps text-[10px]" style={{ color: C.goldDk }}>Out</th>
+              {back.map((i) => (
+                <th key={i} className="py-1 px-1 font-mono text-[10px]" style={{ color: C.greenDk }}>{i + 1}</th>
+              ))}
+              <th className="py-1 px-1 smallcaps text-[10px]" style={{ color: C.goldDk }}>In</th>
+              <th className="py-1 px-1 smallcaps text-[10px]" style={{ color: C.goldDk }}>Tot</th>
+            </tr>
+            <tr className="border-t" style={{ borderColor: C.rule, background: C.creamLt }}>
+              <th className="py-1 px-1 smallcaps text-[10px] text-left" style={{ color: '#8e8870' }}>Par</th>
+              {front.map((i) => (
+                <th key={i} className="py-1 px-1 font-mono text-[10px]" style={{ color: '#6b6555' }}>{course.holes[i].par}</th>
+              ))}
+              <th className="py-1 px-1 font-mono text-[10px]" style={{ color: C.goldDk }}>
+                {front.reduce((a, i) => a + course.holes[i].par, 0)}
+              </th>
+              {back.map((i) => (
+                <th key={i} className="py-1 px-1 font-mono text-[10px]" style={{ color: '#6b6555' }}>{course.holes[i].par}</th>
+              ))}
+              <th className="py-1 px-1 font-mono text-[10px]" style={{ color: C.goldDk }}>
+                {back.reduce((a, i) => a + course.holes[i].par, 0)}
+              </th>
+              <th className="py-1 px-1 font-mono text-[10px]" style={{ color: C.goldDk }}>
+                {course.holes.reduce((a, h) => a + h.par, 0)}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-t" style={{ borderColor: C.rule }}>
+              <td className="py-1 px-1 smallcaps text-[10px]" style={{ color: C.goldDk }}>Team</td>
+              {front.map(perHoleCell)}
+              <td className="py-1 px-1 font-mono text-[11px] text-center font-bold" style={{ color: C.greenDk }}>
+                {sumRange(front) || '—'}
+              </td>
+              {back.map(perHoleCell)}
+              <td className="py-1 px-1 font-mono text-[11px] text-center font-bold" style={{ color: C.greenDk }}>
+                {sumRange(back) || '—'}
+              </td>
+              <td className="py-1 px-1 font-mono text-[11px] text-center font-bold" style={{ color: C.greenDk }}>
+                {bbResult.total || '—'}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-2 text-[10px]" style={{ color: '#6b6555' }}>
+        Members: {teamMembers.map((p) => playerLabel(p)).join(' · ')}
+      </div>
+    </div>
+  );
+}
+
+function SinglesBreakdown({ members, totalPlayers, fmtPts }) {
+  const anyScored = members.some((m) => m.scored);
+  if (!anyScored) {
+    return <div className="text-[11px] italic" style={{ color: '#8e8870' }}>No singles scores posted yet.</div>;
+  }
+  return (
+    <div>
+      <div className="smallcaps text-[10px] mb-2" style={{ color: C.goldDk }}>
+        Singles net stroke · each member's net rank → points
+      </div>
+      <div className="rounded overflow-hidden" style={{ border: `1px solid ${C.rule}`, background: 'white' }}>
+        <table className="w-full text-xs tabular">
+          <thead>
+            <tr style={{ background: C.creamLt }}>
+              <th className="py-1.5 px-2 smallcaps text-[10px] text-left" style={{ color: '#8e8870' }}>Player</th>
+              <th className="py-1.5 px-2 smallcaps text-[10px] text-right" style={{ color: '#8e8870' }}>Net</th>
+              <th className="py-1.5 px-2 smallcaps text-[10px] text-right" style={{ color: '#8e8870' }}>Place</th>
+              <th className="py-1.5 px-2 smallcaps text-[10px] text-right" style={{ color: C.goldDk }}>Pts</th>
+            </tr>
+          </thead>
+          <tbody>
+            {members.map((m) => (
+              <tr key={m.player.id} className="border-t" style={{ borderColor: C.rule }}>
+                <td className="py-1.5 px-2" style={{ color: C.ink }}>{playerLabel(m.player)}</td>
+                <td className="py-1.5 px-2 text-right font-mono" style={{ color: C.ink }}>
+                  {m.scored ? m.scored.net : '—'}
+                </td>
+                <td className="py-1.5 px-2 text-right font-mono text-[10px]" style={{ color: '#6b6555' }}>
+                  {m.place ? `${m.place} / ${totalPlayers}` : '—'}
+                </td>
+                <td className="py-1.5 px-2 text-right font-mono" style={{ color: m.pts > 0 ? C.greenDk : '#bfb89e' }}>
+                  {m.pts > 0 ? fmtPts(m.pts) : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
