@@ -1783,74 +1783,53 @@ function CarpoolSuggestions({ players }) {
 // ============================================================
 // TEAMS — overall team scoring vs quota
 // ============================================================
-function playerQuota(p) {
-  // Simple per-round quota: 36 minus the player's handicap (floor at 0).
-  // Quota represents expected stableford points for one round.
-  const hcp = Math.max(0, Math.round(p.handicap || 0));
-  return Math.max(0, 36 - hcp);
-}
-
 function Teams({ players, scores, teams, setTeams, groups }) {
-  const rows = useMemo(() => {
-    return teams.map((t) => {
-      const members = players.filter((p) => p.team === t.id);
-      const perRound = ROUNDS.map((r) => {
-        const course = COURSES.find((c) => c.id === r.courseId);
-        let pts = 0;
-        let quota = 0;
-        let played = 0;
-        members.forEach((p) => {
-          const sp = stablefordPoints(p, r, scores, course, groups, players);
-          quota += playerQuota(p);
-          if (sp && sp.filled > 0) {
-            pts += sp.points;
-            played += 1;
-          }
-        });
-        return { points: pts, quota, played, members: members.length };
-      });
-      const totalPoints = perRound.reduce((a, x) => a + x.points, 0);
-      const totalQuota = perRound.reduce((a, x) => a + x.quota, 0);
-      const net = totalPoints - totalQuota;
-      const hasAny = perRound.some((x) => x.played > 0);
-      return { team: t, members, perRound, totalPoints, totalQuota, net, hasAny };
-    }).sort((a, b) => {
-      if (!a.hasAny && !b.hasAny) return 0;
-      if (!a.hasAny) return 1;
-      if (!b.hasAny) return -1;
-      return b.net - a.net;
-    });
-  }, [players, scores, teams]);
+  const courseById = (id) => COURSES.find((c) => c.id === id);
+  const { roundResults, teamTotals } = useMemo(
+    () => computeStandings(ROUNDS, teams, players, scores, courseById, groups),
+    [players, scores, teams, groups]
+  );
 
   const updateName = (id, name) => {
     setTeams((prev) => prev.map((t) => (t.id === id ? { ...t, name } : t)));
   };
+
+  const fmtPts = (n) => (n === 0 ? '—' : (Math.round(n * 10) / 10).toString());
 
   return (
     <section className="mt-10">
       <SectionTitle eyebrow="Team Standings" title="The Teams" />
 
       <div className="grid md:grid-cols-2 gap-5">
-        {rows.map((row, i) => (
-          <TeamCard
-            key={row.team.id}
-            rank={row.hasAny ? i + 1 : null}
-            row={row}
-            onRename={(name) => updateName(row.team.id, name)}
-          />
-        ))}
+        {teamTotals.map((row, i) => {
+          const members = players.filter((p) => p.team === row.team.id);
+          return (
+            <TeamCard
+              key={row.team.id}
+              rank={row.total > 0 ? i + 1 : null}
+              team={row.team}
+              members={members}
+              roundResults={roundResults}
+              perRoundPoints={row.perRound}
+              total={row.total}
+              fmtPts={fmtPts}
+              onRename={(name) => updateName(row.team.id, name)}
+            />
+          );
+        })}
       </div>
 
       <p className="mt-6 text-xs italic text-center" style={{ color: '#6b6555' }}>
-        Each player's per-round quota is <span className="font-mono">36 − handicap</span>.
-        Team net = total Stableford points scored minus combined quota across all three rounds. Highest net wins.
+        R1 & R2 are team best-ball (2 lowest net per hole) · Teams rank 1–5 → 20/15/10/5/0 points.
+        R3 is singles net stroke · Each player's net rank → 15, 14… 1 point to their team.
+        Highest total points across the three rounds wins.
       </p>
     </section>
   );
 }
 
-function TeamCard({ rank, row, onRename }) {
-  const { team, members, perRound, totalPoints, totalQuota, net, hasAny } = row;
+function TeamCard({ rank, team, members, roundResults, perRoundPoints, total, fmtPts, onRename }) {
+  const hasAny = total > 0;
   return (
     <div className="rounded overflow-hidden" style={{ background: 'white', border: `1px solid ${C.rule}` }}>
       <div className="px-5 py-4 flex items-center justify-between" style={{ background: C.greenDk, color: C.cream }}>
@@ -1869,9 +1848,9 @@ function TeamCard({ rank, row, onRename }) {
           {rank === 1 && hasAny && <Trophy size={16} style={{ color: C.gold }} />}
         </div>
         <div className="text-right ml-3">
-          <div className="smallcaps text-[10px]" style={{ color: C.gold }}>Net</div>
+          <div className="smallcaps text-[10px]" style={{ color: C.gold }}>Points</div>
           <div className="font-display text-3xl tabular">
-            {hasAny ? formatToPar(net) : '—'}
+            {hasAny ? fmtPts(total) : '—'}
           </div>
         </div>
       </div>
@@ -1887,10 +1866,7 @@ function TeamCard({ rank, row, onRename }) {
           <div className="flex flex-wrap gap-x-3 gap-y-1">
             {members.map((m) => (
               <span key={m.id} style={{ color: C.ink }}>
-                {m.name}
-                <span className="font-mono ml-1" style={{ color: '#8e8870' }}>
-                  (q{playerQuota(m)})
-                </span>
+                {playerLabel(m)}
               </span>
             ))}
           </div>
@@ -1902,40 +1878,56 @@ function TeamCard({ rank, row, onRename }) {
         <thead>
           <tr style={{ background: C.creamLt }}>
             <th className="py-2 px-3 smallcaps text-[10px] text-left" style={{ color: '#8e8870' }}>Round</th>
-            <th className="py-2 px-3 smallcaps text-[10px] text-right" style={{ color: '#8e8870' }}>Points</th>
-            <th className="py-2 px-3 smallcaps text-[10px] text-right" style={{ color: '#8e8870' }}>Quota</th>
-            <th className="py-2 px-3 smallcaps text-[10px] text-right" style={{ color: C.goldDk }}>Net</th>
+            <th className="py-2 px-3 smallcaps text-[10px] text-right" style={{ color: '#8e8870' }}>Format</th>
+            <th className="py-2 px-3 smallcaps text-[10px] text-right" style={{ color: '#8e8870' }}>Score</th>
+            <th className="py-2 px-3 smallcaps text-[10px] text-right" style={{ color: C.goldDk }}>Pts</th>
           </tr>
         </thead>
         <tbody>
           {ROUNDS.map((r, idx) => {
-            const pr = perRound[idx];
-            const playedAll = pr.played === pr.members && pr.members > 0;
-            const showNet = pr.played > 0;
+            const rr = roundResults[idx];
+            const pts = perRoundPoints[idx] ?? 0;
+            let scoreLabel = '—';
+            let formatLabel = '—';
+            if (r.format === 'bestball2net') {
+              formatLabel = 'Best Ball';
+              const bb = rr?.results?.find((x) => x.team.id === team.id);
+              if (bb) {
+                scoreLabel = bb.complete ? `${bb.total} net` : `${bb.filled}/18`;
+              }
+            } else if (r.format === 'netstroke') {
+              formatLabel = 'Singles Net';
+              // Sum member net scores where completed
+              const memberNets = members.map((m) =>
+                rr?.sorted?.find((s) => s.p.id === m.id)
+              ).filter(Boolean);
+              if (memberNets.length > 0) {
+                const sum = memberNets.reduce((a, b) => a + b.net, 0);
+                scoreLabel = `${sum} (${memberNets.length}/${members.length})`;
+              }
+            }
             return (
               <tr key={r.id} className="border-t" style={{ borderColor: C.rule }}>
                 <td className="py-2 px-3" style={{ color: C.ink }}>
                   <div className="font-display">{r.course}</div>
                   <div className="smallcaps text-[10px]" style={{ color: '#8e8870' }}>
-                    {r.day} · {r.date}{!playedAll && pr.members > 0 && ` · ${pr.played}/${pr.members} in`}
+                    {r.day} · {r.date}
                   </div>
                 </td>
-                <td className="py-2 px-3 text-right font-mono">
-                  {showNet ? pr.points : <span style={{ color: '#bfb89e' }}>—</span>}
-                </td>
-                <td className="py-2 px-3 text-right font-mono" style={{ color: '#6b6555' }}>{pr.quota || '—'}</td>
-                <td className="py-2 px-3 text-right font-mono" style={{ color: C.greenDk }}>
-                  {showNet ? formatToPar(pr.points - pr.quota) : <span style={{ color: '#bfb89e' }}>—</span>}
+                <td className="py-2 px-3 text-right smallcaps text-[10px]" style={{ color: '#6b6555' }}>{formatLabel}</td>
+                <td className="py-2 px-3 text-right font-mono text-xs" style={{ color: C.ink }}>{scoreLabel}</td>
+                <td className="py-2 px-3 text-right font-mono" style={{ color: pts > 0 ? C.greenDk : '#bfb89e' }}>
+                  {pts > 0 ? fmtPts(pts) : '—'}
                 </td>
               </tr>
             );
           })}
           <tr className="border-t" style={{ borderColor: C.rule, background: C.creamLt }}>
             <td className="py-2 px-3 smallcaps text-[11px]" style={{ color: C.goldDk }}>Total</td>
-            <td className="py-2 px-3 text-right font-mono font-bold" style={{ color: C.greenDk }}>{hasAny ? totalPoints : '—'}</td>
-            <td className="py-2 px-3 text-right font-mono" style={{ color: '#6b6555' }}>{totalQuota || '—'}</td>
+            <td></td>
+            <td></td>
             <td className="py-2 px-3 text-right font-display text-xl" style={{ color: C.greenDk }}>
-              {hasAny ? formatToPar(net) : '—'}
+              {hasAny ? fmtPts(total) : '—'}
             </td>
           </tr>
         </tbody>
