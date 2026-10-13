@@ -194,20 +194,18 @@ const playerLabel = (p) => {
 const findPlayerGroup = (playerId, roundId, groups) =>
   (groups?.[roundId] || []).find((g) => (g.playerIds || []).includes(playerId)) || null;
 
-// "Strokes off the low man" in the player's group for this round.
-// Returns a 18-length array of strokes-per-hole, allocated to the hardest
-// holes (hcp 1 first). Players not assigned to any group get 0 strokes.
+// "Strokes off the field low man" — every player strokes off the lowest
+// handicap in the whole field (not just their playing group). Returns an
+// 18-length array of strokes-per-hole allocated to the hardest holes
+// (hcp 1 first). The field low man gets 0.
+// `groups` and `round` are accepted for signature stability but unused.
 const strokesForRound = (player, round, groups, players, course) => {
   if (!course) return Array(18).fill(0);
-  const group = findPlayerGroup(player.id, round.id, groups);
-  if (!group) return Array(course.holes.length).fill(0);
-  const groupHcps = (group.playerIds || [])
-    .filter(Boolean)
-    .map((pid) => players.find((p) => p.id === pid))
-    .filter(Boolean)
-    .map((p) => Math.round(p.handicap ?? 0));
-  if (groupHcps.length === 0) return Array(course.holes.length).fill(0);
-  const low = Math.min(...groupHcps);
+  const fieldHcps = (players || [])
+    .map((p) => Math.round(p?.handicap ?? NaN))
+    .filter((h) => Number.isFinite(h));
+  if (fieldHcps.length === 0) return Array(course.holes.length).fill(0);
+  const low = Math.min(...fieldHcps);
   const diff = Math.max(0, Math.round(player.handicap ?? 0) - low);
   return allocateStrokes(diff, course.holes);
 };
