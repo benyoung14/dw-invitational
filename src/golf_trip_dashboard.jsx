@@ -544,6 +544,7 @@ export default function GolfTripDashboard() {
         {tab === 'schedule'    && <Schedule players={players} groups={groups} setGroups={setGroups} />}
         {tab === 'roster'      && <Roster players={players} setPlayers={setPlayers} teams={teams} />}
         {tab === 'teams'       && <Teams players={players} scores={scores} teams={teams} setTeams={setTeams} groups={groups} />}
+        {tab === 'skins'       && <Skins players={players} scores={scores} groups={groups} />}
         {tab === 'courses'     && <Courses />}
         {tab === 'scorecard'   && <Scorecard players={players} scores={scores} setScores={setScores} teams={teams} groups={groups} />}
         </div>
@@ -735,6 +736,7 @@ function Nav({ tab, setTab }) {
     { id: 'schedule',    label: 'Schedule',    short: 'Schedule', Icon: Calendar },
     { id: 'roster',      label: 'Players',     short: 'Players',  Icon: Users },
     { id: 'teams',       label: 'Teams',       short: 'Teams',    Icon: Shield },
+    { id: 'skins',       label: 'Skins',       short: 'Skins',    Icon: Flag },
     { id: 'courses',     label: 'Courses',     short: 'Courses',  Icon: Flag },
     { id: 'scorecard',   label: 'Scorecard',   short: 'Score',    Icon: ClipboardList },
   ];
@@ -2118,6 +2120,234 @@ function SinglesBreakdown({ members, totalPlayers, fmtPts }) {
         </table>
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// SKINS — net scoring, whole-field pool, ties carry (18 drops)
+// ============================================================
+const computeSkinsForRound = (round, players, scores, course, groups) => {
+  if (!course) return null;
+  const n = course.holes.length;
+  // Build each player's net array for the round.
+  const playerNets = players.map((p) => ({
+    player: p,
+    nets: netHoleScores(p, round, scores, course, groups, players),
+  }));
+
+  const holes = [];
+  const skinsByPlayer = new Map();
+  let carry = 0;
+
+  for (let i = 0; i < n; i++) {
+    // Posted nets this hole + whether every player has posted.
+    const posted = playerNets
+      .map((pn) => ({ player: pn.player, net: pn.nets?.[i] }))
+      .filter((x) => Number.isFinite(x.net));
+    const allIn = posted.length === players.length;
+
+    if (!allIn) {
+      holes.push({ hole: i + 1, status: 'pending', carryBefore: carry, posted: posted.length, total: players.length });
+      continue;
+    }
+
+    const minNet = Math.min(...posted.map((x) => x.net));
+    const winners = posted.filter((x) => x.net === minNet);
+
+    if (winners.length === 1) {
+      const award = 1 + carry;
+      const winner = winners[0].player;
+      skinsByPlayer.set(winner.id, (skinsByPlayer.get(winner.id) || 0) + award);
+      holes.push({
+        hole: i + 1, status: 'won', winner, net: minNet, award, carryBefore: carry,
+      });
+      carry = 0;
+    } else {
+      // Tie — carry to next hole unless this is the final hole.
+      if (i === n - 1) {
+        holes.push({
+          hole: i + 1, status: 'tied-final', tiedPlayers: winners.map((w) => w.player),
+          net: minNet, carryBefore: carry, dropped: carry,
+        });
+        carry = 0;
+      } else {
+        carry += 1;
+        holes.push({
+          hole: i + 1, status: 'tied', tiedPlayers: winners.map((w) => w.player),
+          net: minNet, carryAfter: carry,
+        });
+      }
+    }
+  }
+
+  return { holes, skinsByPlayer, carryUnresolved: carry };
+};
+
+function Skins({ players, scores, groups }) {
+  const [activeRound, setActiveRound] = useState(ROUNDS[0].id);
+  const round = ROUNDS.find((r) => r.id === activeRound);
+  const course = COURSES.find((c) => c.id === round.courseId);
+  const result = useMemo(
+    () => computeSkinsForRound(round, players, scores, course, groups),
+    [round, players, scores, course, groups]
+  );
+
+  const totals = players.map((p) => ({
+    player: p,
+    skins: result?.skinsByPlayer.get(p.id) || 0,
+  })).sort((a, b) => b.skins - a.skins);
+
+  const anySkins = totals.some((t) => t.skins > 0);
+
+  return (
+    <section className="mt-10">
+      <SectionTitle eyebrow="Side Game" title="The Skins" />
+
+      {/* DAY SELECTOR */}
+      <div className="grid md:grid-cols-3 gap-4 mb-10">
+        {ROUNDS.map((r, i) => {
+          const active = r.id === activeRound;
+          return (
+            <button
+              key={r.id}
+              onClick={() => setActiveRound(r.id)}
+              className="text-left rounded relative overflow-hidden transition-all"
+              style={{
+                background: active ? C.greenDk : 'white',
+                color: active ? C.cream : C.ink,
+                border: `1px solid ${active ? C.greenDk : C.rule}`,
+                boxShadow: active ? '0 6px 14px rgba(6,58,38,0.15)' : 'none',
+              }}
+            >
+              <div className="absolute top-0 left-0 right-0 h-1" style={{ background: C.gold }} />
+              <div className="p-5">
+                <div className="smallcaps text-[11px] mb-1" style={{ color: active ? C.gold : C.goldDk }}>
+                  Day {i + 1} · {r.day} {r.date}
+                </div>
+                <div className="font-display text-2xl" style={{ color: active ? C.cream : C.greenDkr }}>
+                  {r.course}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* STANDINGS */}
+      <div className="mb-3 smallcaps text-[11px]" style={{ color: C.goldDk }}>Skins Won</div>
+      <div className="rounded mb-8" style={{ border: `1px solid ${C.rule}`, background: 'white' }}>
+        <table className="w-full text-sm tabular">
+          <thead>
+            <tr className="text-left" style={{ background: C.greenDk, color: C.cream }}>
+              <th className="py-3 px-3 smallcaps text-[11px] w-12">Pos</th>
+              <th className="py-3 px-3 smallcaps text-[11px]">Player</th>
+              <th className="py-3 px-3 smallcaps text-[11px] text-right" style={{ color: C.gold }}>Skins</th>
+            </tr>
+          </thead>
+          <tbody>
+            {totals.map((row, i) => {
+              const leader = i === 0 && row.skins > 0;
+              return (
+                <tr key={row.player.id} className="border-t" style={{ borderColor: C.rule, background: leader ? '#FBF5DF' : 'transparent' }}>
+                  <td className="py-3 px-3 font-display text-lg" style={{ color: leader ? C.goldDk : C.ink }}>
+                    {row.skins > 0 ? i + 1 : '—'}
+                  </td>
+                  <td className="py-3 px-3 font-display text-lg">
+                    {playerLabel(row.player)}
+                    {leader && <Trophy size={14} className="inline ml-2" style={{ color: C.gold }} />}
+                  </td>
+                  <td className="py-3 px-3 text-right font-display text-xl font-mono" style={{ color: row.skins > 0 ? C.greenDk : '#bfb89e' }}>
+                    {row.skins > 0 ? row.skins : '—'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* HOLE-BY-HOLE */}
+      <div className="mb-3 smallcaps text-[11px]" style={{ color: C.goldDk }}>Hole-by-Hole</div>
+      <div className="rounded" style={{ border: `1px solid ${C.rule}`, background: 'white' }}>
+        <table className="w-full text-sm tabular">
+          <thead>
+            <tr className="text-left" style={{ background: C.greenDk, color: C.cream }}>
+              <th className="py-3 px-2 smallcaps text-[11px] w-14 text-center">Hole</th>
+              <th className="py-3 px-2 smallcaps text-[11px] w-14 text-center">Par</th>
+              <th className="py-3 px-3 smallcaps text-[11px]">Result</th>
+              <th className="py-3 px-3 smallcaps text-[11px] text-right">Net</th>
+              <th className="py-3 px-3 smallcaps text-[11px] text-right" style={{ color: C.gold }}>Skins</th>
+            </tr>
+          </thead>
+          <tbody>
+            {result?.holes.map((h) => {
+              const par = course.holes[h.hole - 1].par;
+              let resultCell, netCell, skinsCell;
+              if (h.status === 'won') {
+                resultCell = (
+                  <span>
+                    <span className="font-display" style={{ color: C.greenDk }}>{playerLabel(h.winner)}</span>
+                    {h.carryBefore > 0 && (
+                      <span className="smallcaps text-[10px] ml-2" style={{ color: C.goldDk }}>+{h.carryBefore} carry</span>
+                    )}
+                  </span>
+                );
+                netCell = h.net;
+                skinsCell = <span className="font-mono" style={{ color: C.greenDk }}>{h.award}</span>;
+              } else if (h.status === 'tied') {
+                resultCell = (
+                  <span style={{ color: '#8e8870' }}>
+                    <span className="italic">Tie — carried</span>
+                    <span className="smallcaps text-[10px] ml-2" style={{ color: C.goldDk }}>pot: {h.carryAfter}</span>
+                    <div className="text-[10px] mt-0.5">{h.tiedPlayers.map((p) => p.name).join(', ')}</div>
+                  </span>
+                );
+                netCell = h.net;
+                skinsCell = <span style={{ color: '#bfb89e' }}>—</span>;
+              } else if (h.status === 'tied-final') {
+                resultCell = (
+                  <span style={{ color: '#8e8870' }}>
+                    <span className="italic">Final-hole tie — {h.dropped > 0 ? `${h.dropped} skin${h.dropped > 1 ? 's' : ''} dropped` : 'no carryover'}</span>
+                    <div className="text-[10px] mt-0.5">{h.tiedPlayers.map((p) => p.name).join(', ')}</div>
+                  </span>
+                );
+                netCell = h.net;
+                skinsCell = <span style={{ color: '#bfb89e' }}>—</span>;
+              } else {
+                resultCell = <span style={{ color: '#bfb89e' }} className="italic">{h.posted}/{h.total} posted</span>;
+                netCell = <span style={{ color: '#bfb89e' }}>—</span>;
+                skinsCell = <span style={{ color: '#bfb89e' }}>—</span>;
+              }
+              return (
+                <tr key={h.hole} className="border-t" style={{ borderColor: C.rule }}>
+                  <td className="py-2 px-2 font-mono text-center" style={{ color: C.greenDk }}>{h.hole}</td>
+                  <td className="py-2 px-2 font-mono text-center" style={{ color: '#6b6555' }}>{par}</td>
+                  <td className="py-2 px-3">{resultCell}</td>
+                  <td className="py-2 px-3 text-right font-mono" style={{ color: C.ink }}>{netCell}</td>
+                  <td className="py-2 px-3 text-right font-mono">{skinsCell}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {result && result.carryUnresolved > 0 && (
+        <div className="mt-4 text-xs italic" style={{ color: '#6b6555' }}>
+          {result.carryUnresolved} skin{result.carryUnresolved > 1 ? 's' : ''} still carrying — awarded on the next unique-winner hole, or dropped if the round ends tied.
+        </div>
+      )}
+
+      <p className="mt-4 text-xs italic" style={{ color: '#6b6555' }}>
+        Net scoring (strokes off field low man) · Full-field pool across all {players.length} players · Ties carry to the next hole · Final-hole ties drop the carryover.
+      </p>
+
+      {!anySkins && (
+        <div className="mt-6 p-4 text-sm rounded text-center" style={{ background: C.creamLt, border: `1px solid ${C.rule}` }}>
+          No skins awarded yet — holes are only decided once all {players.length} players have posted a score.
+        </div>
+      )}
+    </section>
   );
 }
 
