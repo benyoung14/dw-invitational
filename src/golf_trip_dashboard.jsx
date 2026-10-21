@@ -530,6 +530,44 @@ export default function GolfTripDashboard() {
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [players, scores, teams, groups, loaded]);
 
+  // Auto-populate R3 pairings from the Mankles standings once R1 and R2
+  // are fully scored for every player. Lowest total tees off first
+  // (bottom 3 → Group 1 threesome, next 4 → Group 2, next 4 → Group 3,
+  // top 4 → Group 4). Skipped if any R3 slot already has a player set
+  // so manual overrides are respected.
+  useEffect(() => {
+    if (!loaded) return;
+    const r3 = groups.r3 || [];
+    if (r3.length === 0) return;
+    const anyAssigned = r3.some((g) => (g.playerIds || []).some((id) => id));
+    if (anyAssigned) return;
+    if (players.length < 15) return;
+
+    const fullyScored = (arr) =>
+      Array.isArray(arr) && arr.length === 18 && arr.every((x) => Number.isFinite(x));
+    const r1 = scores?.r1 || {};
+    const r2 = scores?.r2 || {};
+    const bothDone = players.every((p) => fullyScored(r1[p.id]) && fullyScored(r2[p.id]));
+    if (!bothDone) return;
+
+    const courseById = (id) => COURSES.find((c) => c.id === id);
+    const { mankles } = computeStandings(ROUNDS, teams, players, scores, courseById, groups);
+    const ranked = [...mankles].sort((a, b) => a.total - b.total);
+    const ids = ranked.map((m) => m.player.id);
+
+    let idx = 0;
+    const newR3 = r3.map((g) => {
+      const size = (g.playerIds || []).length;
+      const picks = ids.slice(idx, idx + size);
+      idx += size;
+      const padded = [...picks];
+      while (padded.length < size) padded.push('');
+      return { ...g, playerIds: padded };
+    });
+
+    setGroups((prev) => ({ ...prev, r3: newR3 }));
+  }, [loaded, players, scores, teams, groups]);
+
   return (
     <div className="min-h-screen w-full font-body relative" style={{ background: C.cream, color: C.ink }}>
       <style>{FONTS}</style>
@@ -997,6 +1035,12 @@ function Schedule({ players, groups, setGroups }) {
                 )}
 
                 <div className="smallcaps text-[10px] mb-2" style={{ color: C.goldDk }}>Groups & Tee Times</div>
+                {r.id === 'r3' && !r.pairingsLocked && (
+                  <div className="text-[11px] italic mb-3 p-2 rounded" style={{ background: C.creamLt, border: `1px dashed ${C.rule}`, color: '#6b6555' }}>
+                    Auto-pairs from Mankles standings once R1 &amp; R2 are fully scored —
+                    bottom 3 tee off first, top 4 last. Edit any slot to override.
+                  </div>
+                )}
                 <div className="space-y-4">
                   {(() => {
                     const roundGroups = groups[r.id] || [];
