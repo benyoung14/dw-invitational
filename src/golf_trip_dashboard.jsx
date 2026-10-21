@@ -2168,12 +2168,15 @@ function SinglesBreakdown({ members, totalPlayers, fmtPts }) {
 }
 
 // ============================================================
-// SKINS — net scoring, whole-field pool, ties carry (18 drops)
+// SKINS — net scoring, whole-field pool, NO carryovers.
+// Each round has a $180 pot that is split evenly across all skins won.
+// If no skins are won in a round (every hole ties), the pot is unawarded.
 // ============================================================
+const SKINS_POT_PER_ROUND = 180;
+
 const computeSkinsForRound = (round, players, scores, course, groups) => {
   if (!course) return null;
   const n = course.holes.length;
-  // Build each player's net array for the round.
   const playerNets = players.map((p) => ({
     player: p,
     nets: netHoleScores(p, round, scores, course, groups, players),
@@ -2181,17 +2184,16 @@ const computeSkinsForRound = (round, players, scores, course, groups) => {
 
   const holes = [];
   const skinsByPlayer = new Map();
-  let carry = 0;
+  let totalSkins = 0;
 
   for (let i = 0; i < n; i++) {
-    // Posted nets this hole + whether every player has posted.
     const posted = playerNets
       .map((pn) => ({ player: pn.player, net: pn.nets?.[i] }))
       .filter((x) => Number.isFinite(x.net));
     const allIn = posted.length === players.length;
 
     if (!allIn) {
-      holes.push({ hole: i + 1, status: 'pending', carryBefore: carry, posted: posted.length, total: players.length });
+      holes.push({ hole: i + 1, status: 'pending', posted: posted.length, total: players.length });
       continue;
     }
 
@@ -2199,32 +2201,19 @@ const computeSkinsForRound = (round, players, scores, course, groups) => {
     const winners = posted.filter((x) => x.net === minNet);
 
     if (winners.length === 1) {
-      const award = 1 + carry;
       const winner = winners[0].player;
-      skinsByPlayer.set(winner.id, (skinsByPlayer.get(winner.id) || 0) + award);
-      holes.push({
-        hole: i + 1, status: 'won', winner, net: minNet, award, carryBefore: carry,
-      });
-      carry = 0;
+      skinsByPlayer.set(winner.id, (skinsByPlayer.get(winner.id) || 0) + 1);
+      totalSkins += 1;
+      holes.push({ hole: i + 1, status: 'won', winner, net: minNet });
     } else {
-      // Tie — carry to next hole unless this is the final hole.
-      if (i === n - 1) {
-        holes.push({
-          hole: i + 1, status: 'tied-final', tiedPlayers: winners.map((w) => w.player),
-          net: minNet, carryBefore: carry, dropped: carry,
-        });
-        carry = 0;
-      } else {
-        carry += 1;
-        holes.push({
-          hole: i + 1, status: 'tied', tiedPlayers: winners.map((w) => w.player),
-          net: minNet, carryAfter: carry,
-        });
-      }
+      holes.push({
+        hole: i + 1, status: 'tied', tiedPlayers: winners.map((w) => w.player), net: minNet,
+      });
     }
   }
 
-  return { holes, skinsByPlayer, carryUnresolved: carry };
+  const payoutPerSkin = totalSkins > 0 ? SKINS_POT_PER_ROUND / totalSkins : 0;
+  return { holes, skinsByPlayer, totalSkins, payoutPerSkin, pot: SKINS_POT_PER_ROUND };
 };
 
 function Skins({ players, scores, groups }) {
@@ -2236,12 +2225,13 @@ function Skins({ players, scores, groups }) {
     [round, players, scores, course, groups]
   );
 
-  const totals = players.map((p) => ({
-    player: p,
-    skins: result?.skinsByPlayer.get(p.id) || 0,
-  })).sort((a, b) => b.skins - a.skins);
-
+  const payoutPer = result?.payoutPerSkin || 0;
+  const totals = players.map((p) => {
+    const skins = result?.skinsByPlayer.get(p.id) || 0;
+    return { player: p, skins, payout: skins * payoutPer };
+  }).sort((a, b) => b.skins - a.skins);
   const anySkins = totals.some((t) => t.skins > 0);
+  const fmtUsd = (n) => `$${n.toFixed(2)}`;
 
   return (
     <section className="mt-10">
@@ -2277,6 +2267,22 @@ function Skins({ players, scores, groups }) {
         })}
       </div>
 
+      {/* POT SUMMARY */}
+      <div className="mb-6 p-4 rounded flex items-center justify-between flex-wrap gap-3" style={{ background: C.greenDk, color: C.cream }}>
+        <div>
+          <div className="smallcaps text-[11px]" style={{ color: C.gold }}>Round Pot</div>
+          <div className="font-display text-2xl">${result?.pot ?? 0}</div>
+        </div>
+        <div>
+          <div className="smallcaps text-[11px]" style={{ color: C.gold }}>Skins Won</div>
+          <div className="font-display text-2xl">{result?.totalSkins ?? 0}</div>
+        </div>
+        <div>
+          <div className="smallcaps text-[11px]" style={{ color: C.gold }}>Payout per Skin</div>
+          <div className="font-display text-2xl">{result?.totalSkins > 0 ? fmtUsd(payoutPer) : '—'}</div>
+        </div>
+      </div>
+
       {/* STANDINGS */}
       <div className="mb-3 smallcaps text-[11px]" style={{ color: C.goldDk }}>Skins Won</div>
       <div className="rounded mb-8" style={{ border: `1px solid ${C.rule}`, background: 'white' }}>
@@ -2285,7 +2291,8 @@ function Skins({ players, scores, groups }) {
             <tr className="text-left" style={{ background: C.greenDk, color: C.cream }}>
               <th className="py-3 px-3 smallcaps text-[11px] w-12">Pos</th>
               <th className="py-3 px-3 smallcaps text-[11px]">Player</th>
-              <th className="py-3 px-3 smallcaps text-[11px] text-right" style={{ color: C.gold }}>Skins</th>
+              <th className="py-3 px-3 smallcaps text-[11px] text-right">Skins</th>
+              <th className="py-3 px-3 smallcaps text-[11px] text-right" style={{ color: C.gold }}>Payout</th>
             </tr>
           </thead>
           <tbody>
@@ -2302,6 +2309,9 @@ function Skins({ players, scores, groups }) {
                   </td>
                   <td className="py-3 px-3 text-right font-display text-xl font-mono" style={{ color: row.skins > 0 ? C.greenDk : '#bfb89e' }}>
                     {row.skins > 0 ? row.skins : '—'}
+                  </td>
+                  <td className="py-3 px-3 text-right font-display text-xl font-mono" style={{ color: row.skins > 0 ? C.greenDk : '#bfb89e' }}>
+                    {row.skins > 0 ? fmtUsd(row.payout) : '—'}
                   </td>
                 </tr>
               );
@@ -2328,30 +2338,13 @@ function Skins({ players, scores, groups }) {
               const par = course.holes[h.hole - 1].par;
               let resultCell, netCell, skinsCell;
               if (h.status === 'won') {
-                resultCell = (
-                  <span>
-                    <span className="font-display" style={{ color: C.greenDk }}>{playerLabel(h.winner)}</span>
-                    {h.carryBefore > 0 && (
-                      <span className="smallcaps text-[10px] ml-2" style={{ color: C.goldDk }}>+{h.carryBefore} carry</span>
-                    )}
-                  </span>
-                );
+                resultCell = <span className="font-display" style={{ color: C.greenDk }}>{playerLabel(h.winner)}</span>;
                 netCell = h.net;
-                skinsCell = <span className="font-mono" style={{ color: C.greenDk }}>{h.award}</span>;
+                skinsCell = <span className="font-mono" style={{ color: C.greenDk }}>1</span>;
               } else if (h.status === 'tied') {
                 resultCell = (
                   <span style={{ color: '#8e8870' }}>
-                    <span className="italic">Tie — carried</span>
-                    <span className="smallcaps text-[10px] ml-2" style={{ color: C.goldDk }}>pot: {h.carryAfter}</span>
-                    <div className="text-[10px] mt-0.5">{h.tiedPlayers.map((p) => p.name).join(', ')}</div>
-                  </span>
-                );
-                netCell = h.net;
-                skinsCell = <span style={{ color: '#bfb89e' }}>—</span>;
-              } else if (h.status === 'tied-final') {
-                resultCell = (
-                  <span style={{ color: '#8e8870' }}>
-                    <span className="italic">Final-hole tie — {h.dropped > 0 ? `${h.dropped} skin${h.dropped > 1 ? 's' : ''} dropped` : 'no carryover'}</span>
+                    <span className="italic">Tie — no skin</span>
                     <div className="text-[10px] mt-0.5">{h.tiedPlayers.map((p) => p.name).join(', ')}</div>
                   </span>
                 );
@@ -2376,14 +2369,9 @@ function Skins({ players, scores, groups }) {
         </table>
       </div>
 
-      {result && result.carryUnresolved > 0 && (
-        <div className="mt-4 text-xs italic" style={{ color: '#6b6555' }}>
-          {result.carryUnresolved} skin{result.carryUnresolved > 1 ? 's' : ''} still carrying — awarded on the next unique-winner hole, or dropped if the round ends tied.
-        </div>
-      )}
-
       <p className="mt-4 text-xs italic" style={{ color: '#6b6555' }}>
-        Net scoring (strokes off field low man) · Full-field pool across all {players.length} players · Ties carry to the next hole · Final-hole ties drop the carryover.
+        Net scoring (strokes off field low man) · Full-field pool across all {players.length} players ·
+        Ties get no skin (no carryovers) · ${result?.pot ?? SKINS_POT_PER_ROUND} pot per round is split evenly across skins won.
       </p>
 
       {!anySkins && (
