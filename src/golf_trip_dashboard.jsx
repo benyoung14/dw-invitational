@@ -772,6 +772,67 @@ function GoldSeal({ size = 64 }) {
 // ============================================================
 // MANKLES TICKER — scrolling leaderboard strip across the top
 // ============================================================
+
+// The Mankles trophy — a silver apple-shaped kitchen timer. The top half
+// of the apple twists to set the dial; a seam runs around the middle,
+// a short dark stem sits on top, and tiny tick marks suggest the dial.
+function AppleTimer({ size = 18 }) {
+  const id = useMemo(() => `appleg-${Math.random().toString(36).slice(2, 9)}`, []);
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      style={{ display: 'inline-block', verticalAlign: '-3px' }}
+    >
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#f6f6f6" />
+          <stop offset="0.4" stopColor="#d6d6d8" />
+          <stop offset="0.7" stopColor="#9b9ca0" />
+          <stop offset="1" stopColor="#6d6e72" />
+        </linearGradient>
+        <linearGradient id={`${id}-hi`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="rgba(255,255,255,0)" />
+          <stop offset="0.3" stopColor="rgba(255,255,255,0.55)" />
+          <stop offset="0.6" stopColor="rgba(255,255,255,0)" />
+        </linearGradient>
+      </defs>
+      {/* stem */}
+      <rect x="11" y="2.5" width="2" height="3" rx="0.4" fill="#2a2a2a" />
+      {/* leaf */}
+      <path d="M13 4 Q 16 3 16.5 5 Q 14.5 5.5 13 4 Z" fill="#8e8870" />
+      {/* apple body */}
+      <path
+        d="M12 5.5 C 6 5.5 3 10 3 14 C 3 18.5 7 22 12 22 C 17 22 21 18.5 21 14 C 21 10 18 5.5 12 5.5 Z"
+        fill={`url(#${id})`}
+        stroke="#5a5b60"
+        strokeWidth="0.6"
+      />
+      {/* soft highlight */}
+      <ellipse cx="8.5" cy="9.5" rx="3" ry="1.6" fill="rgba(255,255,255,0.5)" />
+      {/* indicator arrow at top of dial */}
+      <path d="M12 6.5 L 10.8 8 L 13.2 8 Z" fill="#1a1a1a" />
+      {/* seam/dial line around apple middle (twist) */}
+      <path
+        d="M3.5 14 Q 12 16.5 20.5 14"
+        fill="none"
+        stroke="#2a2a2a"
+        strokeWidth="0.6"
+        strokeLinecap="round"
+      />
+      {/* dial tick marks */}
+      <g stroke="#2a2a2a" strokeWidth="0.5" strokeLinecap="round">
+        <line x1="6"  y1="12.5" x2="6.6"  y2="13.2" />
+        <line x1="9"  y1="11.6" x2="9.4"  y2="12.4" />
+        <line x1="15" y1="11.6" x2="14.6" y2="12.4" />
+        <line x1="18" y1="12.5" x2="17.4" y2="13.2" />
+      </g>
+    </svg>
+  );
+}
+
 function MankTicker({ players, scores, teams, groups, onClick }) {
   const courseById = (id) => COURSES.find((c) => c.id === id);
   const { mankles } = useMemo(
@@ -801,7 +862,11 @@ function MankTicker({ players, scores, teams, groups, onClick }) {
       </span>
       {entries.map((e, i) => (
         <span key={i} className="mr-6" style={{ color: e.leader ? C.gold : C.cream }}>
-          {e.leader && <span className="mr-1" title="Silver apple kitchen timer trophy">🍏</span>}
+          {e.leader && (
+            <span className="mr-1 inline-flex items-center" title="Mankles trophy — silver apple kitchen timer">
+              <AppleTimer size={14} />
+            </span>
+          )}
           <span className="font-mono mr-1" style={{ opacity: 0.65 }}>{e.rank}.</span>
           <span>{e.name}</span>
           <span className="font-mono ml-1.5" style={{ opacity: 0.9 }}>{e.pts}</span>
