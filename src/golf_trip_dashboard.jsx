@@ -573,6 +573,7 @@ export default function GolfTripDashboard() {
       <style>{FONTS}</style>
 
       <Header onLogoClick={() => setTab('leaderboard')} />
+      <MankTicker players={players} scores={scores} teams={teams} groups={groups} onClick={() => setTab('leaderboard')} />
       <Nav tab={tab} setTab={setTab} />
 
       <main className="relative max-w-[1500px] mx-auto px-6 pb-20">
@@ -768,38 +769,168 @@ function GoldSeal({ size = 64 }) {
 // ============================================================
 // NAV
 // ============================================================
-function Nav({ tab, setTab }) {
-  const items = [
-    { id: 'leaderboard', label: 'Leaderboard', short: 'Board',    Icon: Trophy },
-    { id: 'schedule',    label: 'Schedule',    short: 'Schedule', Icon: Calendar },
-    { id: 'roster',      label: 'Players',     short: 'Players',  Icon: Users },
-    { id: 'teams',       label: 'Teams',       short: 'Teams',    Icon: Shield },
-    { id: 'skins',       label: 'Skins',       short: 'Skins',    Icon: Flag },
-    { id: 'courses',     label: 'Courses',     short: 'Courses',  Icon: Flag },
-    { id: 'scorecard',   label: 'Scorecard',   short: 'Score',    Icon: ClipboardList },
-  ];
-  return (
-    <nav className="border-b" style={{ background: C.creamLt, borderColor: C.rule }}>
-      <div className="max-w-6xl mx-auto px-2 md:px-4 flex items-center justify-between md:justify-center gap-0 md:gap-6">
-        {items.map(({ id, label, short, Icon }) => {
-          const active = tab === id;
-          return (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              className="relative flex-1 md:flex-initial px-1 md:px-4 py-3 md:py-4 smallcaps flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 transition-colors text-[10px] md:text-xs"
-              style={{ color: active ? C.greenDk : '#6b6555' }}
-            >
-              <Icon size={16} strokeWidth={1.5} />
-              <span className="leading-none md:hidden">{short}</span>
-              <span className="leading-none hidden md:inline">{label}</span>
-              {active && (
-                <span className="absolute left-1 right-1 md:left-2 md:right-2 -bottom-px h-0.5" style={{ background: C.gold }} />
-              )}
-            </button>
-          );
-        })}
+// ============================================================
+// MANKLES TICKER — scrolling leaderboard strip across the top
+// ============================================================
+function MankTicker({ players, scores, teams, groups, onClick }) {
+  const courseById = (id) => COURSES.find((c) => c.id === id);
+  const { mankles } = useMemo(
+    () => computeStandings(ROUNDS, teams, players, scores, courseById, groups),
+    [players, scores, teams, groups]
+  );
+  const scored = mankles.filter((m) => m.filled > 0);
+  if (scored.length === 0) {
+    return (
+      <div className="w-full py-1.5 overflow-hidden text-center" style={{ background: C.greenDkr, color: C.gold }}>
+        <span className="smallcaps text-[10px]">Mankles · scoring opens once rounds begin</span>
       </div>
+    );
+  }
+  // Build ticker content: silver-apple-timer trophy on the leader, then
+  // all 15 ranked. Duplicated so the marquee scroll loop stays seamless.
+  const entries = mankles.map((m, i) => ({
+    rank: i + 1,
+    name: m.player.name,
+    pts: m.total,
+    leader: i === 0 && m.total > 0,
+  }));
+  const content = (
+    <>
+      <span className="smallcaps mr-6" style={{ color: C.gold, letterSpacing: '0.12em' }}>
+        MANKLES RACE
+      </span>
+      {entries.map((e, i) => (
+        <span key={i} className="mr-6" style={{ color: e.leader ? C.gold : C.cream }}>
+          {e.leader && <span className="mr-1" title="Silver apple kitchen timer trophy">🍏</span>}
+          <span className="font-mono mr-1" style={{ opacity: 0.65 }}>{e.rank}.</span>
+          <span>{e.name}</span>
+          <span className="font-mono ml-1.5" style={{ opacity: 0.9 }}>{e.pts}</span>
+          <span className="mx-3" style={{ opacity: 0.4 }}>·</span>
+        </span>
+      ))}
+    </>
+  );
+  return (
+    <button
+      onClick={onClick}
+      className="w-full py-2 overflow-hidden text-left relative cursor-pointer"
+      style={{ background: C.greenDkr, color: C.cream, display: 'block' }}
+      aria-label="Open leaderboard"
+    >
+      <style>{`
+        @keyframes mank-marquee {
+          0% { transform: translate3d(0, 0, 0); }
+          100% { transform: translate3d(-50%, 0, 0); }
+        }
+      `}</style>
+      <div
+        className="whitespace-nowrap text-xs"
+        style={{
+          display: 'inline-block',
+          animation: `mank-marquee ${Math.max(28, entries.length * 2.4)}s linear infinite`,
+          willChange: 'transform',
+        }}
+      >
+        <span>{content}</span>
+        <span aria-hidden="true">{content}</span>
+      </div>
+    </button>
+  );
+}
+
+function Nav({ tab, setTab }) {
+  // Primary tabs: always visible on mobile. Secondary tabs: hidden
+  // behind a "More" menu on mobile, visible inline on desktop.
+  const PRIMARY = [
+    { id: 'leaderboard', label: 'Leaderboard', short: 'Board', Icon: Trophy },
+    { id: 'schedule',    label: 'Schedule',    short: 'Sched', Icon: Calendar },
+    { id: 'skins',       label: 'Skins',       short: 'Skins', Icon: Flag },
+    { id: 'scorecard',   label: 'Scorecard',   short: 'Score', Icon: ClipboardList },
+  ];
+  const SECONDARY = [
+    { id: 'roster',  label: 'Players', short: 'Players', Icon: Users },
+    { id: 'teams',   label: 'Teams',   short: 'Teams',   Icon: Shield },
+    { id: 'courses', label: 'Courses', short: 'Courses', Icon: Flag },
+  ];
+  const [moreOpen, setMoreOpen] = useState(false);
+  const isSecondaryActive = SECONDARY.some((i) => i.id === tab);
+
+  const Tab = ({ id, label, short, Icon, active, onClick }) => (
+    <button
+      onClick={onClick}
+      className="relative flex-1 md:flex-initial px-1 md:px-4 py-3 md:py-4 smallcaps flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 transition-colors text-[10px] md:text-xs"
+      style={{ color: active ? C.greenDk : '#6b6555' }}
+    >
+      <Icon size={16} strokeWidth={1.5} />
+      <span className="leading-none md:hidden">{short}</span>
+      <span className="leading-none hidden md:inline">{label}</span>
+      {active && (
+        <span className="absolute left-1 right-1 md:left-2 md:right-2 -bottom-px h-0.5" style={{ background: C.gold }} />
+      )}
+    </button>
+  );
+
+  return (
+    <nav className="border-b relative" style={{ background: C.creamLt, borderColor: C.rule }}>
+      <div className="max-w-6xl mx-auto px-2 md:px-4 flex items-center justify-between md:justify-center gap-0 md:gap-6">
+        {PRIMARY.map((item) => (
+          <Tab key={item.id} {...item} active={tab === item.id} onClick={() => { setTab(item.id); setMoreOpen(false); }} />
+        ))}
+        {/* Desktop: show secondary tabs inline */}
+        <div className="hidden md:contents">
+          {SECONDARY.map((item) => (
+            <Tab key={item.id} {...item} active={tab === item.id} onClick={() => setTab(item.id)} />
+          ))}
+        </div>
+        {/* Mobile: "More" dropdown for secondary tabs */}
+        <button
+          onClick={() => setMoreOpen((o) => !o)}
+          className="md:hidden relative flex-1 px-1 py-3 smallcaps flex flex-col items-center justify-center gap-1 text-[10px]"
+          style={{ color: isSecondaryActive || moreOpen ? C.greenDk : '#6b6555' }}
+          aria-expanded={moreOpen}
+          aria-haspopup="menu"
+        >
+          <span className="inline-flex items-center justify-center" style={{ width: 16, height: 16 }}>
+            <span style={{ width: 3, height: 3, borderRadius: 999, background: 'currentColor', marginRight: 2 }} />
+            <span style={{ width: 3, height: 3, borderRadius: 999, background: 'currentColor', marginRight: 2 }} />
+            <span style={{ width: 3, height: 3, borderRadius: 999, background: 'currentColor' }} />
+          </span>
+          <span className="leading-none">More</span>
+          {isSecondaryActive && (
+            <span className="absolute left-1 right-1 -bottom-px h-0.5" style={{ background: C.gold }} />
+          )}
+        </button>
+      </div>
+      {moreOpen && (
+        <>
+          {/* backdrop */}
+          <div
+            className="md:hidden fixed inset-0 z-30"
+            style={{ background: 'rgba(0,0,0,0.1)' }}
+            onClick={() => setMoreOpen(false)}
+          />
+          <div
+            className="md:hidden absolute right-2 top-full z-40 rounded shadow-lg mt-1 min-w-[180px]"
+            style={{ background: 'white', border: `1px solid ${C.rule}` }}
+          >
+            {SECONDARY.map((item) => {
+              const active = tab === item.id;
+              const Icon = item.Icon;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => { setTab(item.id); setMoreOpen(false); }}
+                  className="w-full px-4 py-3 text-left smallcaps text-xs flex items-center gap-2 border-b last:border-b-0"
+                  style={{ color: active ? C.greenDk : C.ink, borderColor: C.rule, background: active ? C.creamLt : 'white' }}
+                >
+                  <Icon size={14} strokeWidth={1.5} />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
     </nav>
   );
 }
