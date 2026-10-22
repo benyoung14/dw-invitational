@@ -863,8 +863,8 @@ function MankTicker({ players, scores, teams, groups, onClick }) {
       {entries.map((e, i) => (
         <span key={i} className="mr-6" style={{ color: e.leader ? C.gold : C.cream }}>
           {e.leader && (
-            <span className="mr-1 inline-flex items-center" title="Mankles trophy — silver apple kitchen timer">
-              <AppleTimer size={14} />
+            <span className="mr-2 inline-flex items-center" title="Mankles trophy — silver apple kitchen timer">
+              <AppleTimer size={22} />
             </span>
           )}
           <span className="font-mono mr-1" style={{ opacity: 0.65 }}>{e.rank}.</span>
@@ -878,7 +878,7 @@ function MankTicker({ players, scores, teams, groups, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="w-full py-2 overflow-hidden text-left relative cursor-pointer"
+      className="w-full py-2.5 overflow-hidden text-left relative cursor-pointer"
       style={{ background: C.greenDkr, color: C.cream, display: 'block' }}
       aria-label="Open leaderboard"
     >
@@ -889,7 +889,7 @@ function MankTicker({ players, scores, teams, groups, onClick }) {
         }
       `}</style>
       <div
-        className="whitespace-nowrap text-xs"
+        className="whitespace-nowrap text-sm"
         style={{
           display: 'inline-block',
           animation: `mank-marquee ${Math.max(28, entries.length * 2.4)}s linear infinite`,
@@ -1163,9 +1163,13 @@ function Leaderboard({ players, scores, teams, groups }) {
                     {row.total > 0 ? i + 1 : '—'}
                   </td>
                   <td className="py-3 px-1 md:px-3 font-display text-base md:text-lg">
-                    <div className="leading-tight truncate">
+                    <div className="leading-tight truncate inline-flex items-center gap-2">
                       {playerLabel(row.player)}
-                      {leader && <Trophy size={14} className="inline ml-2" style={{ color: C.gold }} />}
+                      {leader && (
+                        <span title="Mankles trophy — silver apple kitchen timer" className="inline-flex items-center">
+                          <AppleTimer size={24} />
+                        </span>
+                      )}
                     </div>
                     <div className="md:hidden text-[10px] smallcaps font-body" style={{ color: '#6b6555' }}>
                       {teamName(row.player.team) || '—'}
