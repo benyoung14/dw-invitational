@@ -260,11 +260,12 @@ const stablefordPoints = (player, round, scores, course, groups, players) => {
   if (!course) return null;
   const roundScores = scores?.[round.id]?.[player.id];
   if (!roundScores) return null;
-  let pts = 0, filled = 0;
+  let pts = 0, filled = 0, birdies = 0;
   roundScores.forEach((gross, i) => {
     if (!Number.isFinite(gross)) return;
     filled++;
     const diff = gross - course.holes[i].par;
+    if (diff <= -1) birdies++;
     if (diff <= -2) pts += 8;
     else if (diff === -1) pts += 4;
     else if (diff === 0) pts += 2;
@@ -272,7 +273,7 @@ const stablefordPoints = (player, round, scores, course, groups, players) => {
     else if (diff === 2) pts += 0;
     else pts -= 1; // triple bogey or worse
   });
-  return { points: pts, filled };
+  return { points: pts, filled, birdies };
 };
 
 // Team best-ball net: for each hole, sum the 2 lowest net scores
@@ -360,19 +361,24 @@ const computeStandings = (rounds, teams, players, scores, courseById, groups) =>
     return { round: r, format: r.format };
   });
 
+  // `played` marks rounds where the team has a result, so a real 0 can be
+  // told apart from a round that hasn't finished yet.
   const teamTotals = teams.map((t) => {
     const perRound = roundResults.map((rr) => rr.pointsByTeam?.get(t.id) ?? 0);
+    const played = roundResults.map((rr) => !!rr.pointsByTeam?.has(t.id));
     const total = perRound.reduce((a, b) => a + b, 0);
-    return { team: t, perRound, total };
+    return { team: t, perRound, played, total };
   }).sort((a, b) => b.total - a.total);
 
   // Mankles display: for each round the player posted scores in, the
   // round value is (handicap + Stableford points). Total sums across
-  // rounds. Unplayed rounds contribute 0.
+  // rounds. Unplayed rounds contribute 0. Ties on total are broken by
+  // most gross birdies-or-better across all rounds.
   const mankles = players.map((p) => {
     const hcp = Math.round(p.handicap ?? 0);
     let total = 0;
     let filled = 0;
+    let birdies = 0;
     const perRound = rounds.map((r) => {
       const course = courseById(r.courseId);
       const sp = stablefordPoints(p, r, scores, course, groups, players);
@@ -380,12 +386,13 @@ const computeStandings = (rounds, teams, players, scores, courseById, groups) =>
         const roundValue = hcp + sp.points;
         total += roundValue;
         filled += sp.filled;
+        birdies += sp.birdies;
         return { points: sp.points, roundValue, played: true };
       }
       return { points: 0, roundValue: 0, played: false };
     });
-    return { player: p, perRound, total, filled };
-  }).sort((a, b) => b.total - a.total);
+    return { player: p, perRound, total, filled, birdies };
+  }).sort((a, b) => b.total - a.total || b.birdies - a.birdies);
 
   return { roundResults, teamTotals, mankles };
 };
@@ -552,7 +559,8 @@ export default function GolfTripDashboard() {
 
     const courseById = (id) => COURSES.find((c) => c.id === id);
     const { mankles } = computeStandings(ROUNDS, teams, players, scores, courseById, groups);
-    const ranked = [...mankles].sort((a, b) => a.total - b.total);
+    // mankles is best-first (birdie tiebreak included); reverse for low seeds first.
+    const ranked = [...mankles].reverse();
     const ids = ranked.map((m) => m.player.id);
 
     let idx = 0;
@@ -584,7 +592,7 @@ export default function GolfTripDashboard() {
         {tab === 'roster'      && <Roster players={players} setPlayers={setPlayers} teams={teams} />}
         {tab === 'teams'       && <Teams players={players} scores={scores} teams={teams} setTeams={setTeams} groups={groups} />}
         {tab === 'skins'       && <Skins players={players} scores={scores} groups={groups} />}
-        {tab === 'courses'     && <Courses />}
+        {tab === 'courses'     && <Courses groups={groups} />}
         {tab === 'scorecard'   && <Scorecard players={players} scores={scores} setScores={setScores} teams={teams} groups={groups} />}
         </div>
       </main>
@@ -1015,7 +1023,7 @@ function Leaderboard({ players, scores, teams, groups }) {
   );
 
   const anyScores = teamTotals.some((t) => t.total > 0) || mankles.some((m) => m.filled > 0);
-  const fmtPts = (n) => (n === 0 ? '—' : (Math.round(n * 10) / 10).toString());
+  const fmtPts = (n) => (Math.round(n * 10) / 10).toString();
 
   const buildShareText = () => {
     const lines = [];
@@ -1125,12 +1133,12 @@ function Leaderboard({ players, scores, teams, groups }) {
                     </div>
                   </td>
                   {row.perRound.map((pts, idx) => (
-                    <td key={idx} className="py-3 px-1 md:px-2 text-right align-middle text-xs md:text-sm font-mono" style={{ color: pts > 0 ? C.ink : '#bfb89e' }}>
-                      {fmtPts(pts)}
+                    <td key={idx} className="py-3 px-1 md:px-2 text-right align-middle text-xs md:text-sm font-mono" style={{ color: row.played[idx] ? C.ink : '#bfb89e' }}>
+                      {row.played[idx] ? fmtPts(pts) : '—'}
                     </td>
                   ))}
                   <td className="py-3 px-1 md:px-3 text-right font-display text-base md:text-lg" style={{ color: row.total > 0 ? C.greenDk : '#bfb89e' }}>
-                    {row.total > 0 ? fmtPts(row.total) : '—'}
+                    {row.played.some(Boolean) ? fmtPts(row.total) : '—'}
                   </td>
                 </tr>
               );
@@ -1149,9 +1157,9 @@ function Leaderboard({ players, scores, teams, groups }) {
               <th className="py-3 px-1 md:px-3 smallcaps text-[11px]">Player</th>
               <th className="hidden md:table-cell py-3 px-2 smallcaps text-[11px] text-right">HCP</th>
               {ROUNDS.map((r, idx) => (
-                <th key={r.id} className="py-3 px-1 md:px-2 smallcaps text-[11px] text-right w-10 md:w-auto">R{idx + 1}</th>
+                <th key={r.id} className="py-3 px-1 md:px-2 smallcaps text-[11px] text-right w-8 md:w-auto">R{idx + 1}</th>
               ))}
-              <th className="py-3 px-1 md:px-3 smallcaps text-[11px] text-right w-14 md:w-auto" style={{ color: C.gold }}>Total</th>
+              <th className="py-3 px-1 md:px-3 smallcaps text-[11px] text-right w-12 md:w-auto" style={{ color: C.gold }}>Total</th>
             </tr>
           </thead>
           <tbody>
@@ -1163,11 +1171,14 @@ function Leaderboard({ players, scores, teams, groups }) {
                     {row.total > 0 ? i + 1 : '—'}
                   </td>
                   <td className="py-3 px-1 md:px-3 font-display text-base md:text-lg">
-                    <div className="leading-tight truncate inline-flex items-center gap-2">
-                      {playerLabel(row.player)}
+                    {/* min-w-0 + shrink-0 keep the trophy inside the name cell on
+                        phones instead of spilling over the R1 column; long
+                        names wrap rather than truncate so the (hcp) stays visible. */}
+                    <div className="leading-tight flex items-center gap-1 md:gap-2 min-w-0">
+                      <span className="min-w-0 break-words">{playerLabel(row.player)}</span>
                       {leader && (
-                        <span title="Mankles trophy — silver apple kitchen timer" className="inline-flex items-center">
-                          <AppleTimer size={24} />
+                        <span title="Mankles trophy — silver apple kitchen timer" className="inline-flex items-center shrink-0">
+                          <AppleTimer size={20} />
                         </span>
                       )}
                     </div>
@@ -1196,6 +1207,7 @@ function Leaderboard({ players, scores, teams, groups }) {
         R3 is singles net stroke · Each player's net rank → 15, 14… 1 pt to their team.
         Mankles each round = handicap + Stableford points earned
         (Eagle 8 · Birdie 4 · Par 2 · Bogey 1 · Double 0 · Triple+ −1).
+        Mankles ties go to the most birdies across all rounds.
       </p>
     </section>
   );
@@ -1276,7 +1288,8 @@ function RulesModal({ onClose }) {
               <li>Double bogey = <b>0</b></li>
               <li>Triple+ = <b>−1</b></li>
             </ul>
-            Total across all 3 rounds wins the Mankles.
+            Total across all 3 rounds wins the Mankles. Ties are broken by
+            most gross birdies (or better) across all 3 rounds.
           </Section>
           <Section title="Skins — Side Game ($180/round)">
             Lowest <i>net</i> score on a hole wins the skin. Ties mean no
@@ -1465,7 +1478,7 @@ function Schedule({ players, groups, setGroups }) {
 function Roster({ players, setPlayers, teams }) {
   return (
     <section className="mt-10">
-      <SectionTitle eyebrow="Sixteen Competitors" title="Players" />
+      <SectionTitle eyebrow="Fifteen Competitors" title="Players" />
 
       {/* MOBILE: card list */}
       <div className="md:hidden space-y-3">
@@ -2197,7 +2210,7 @@ function Teams({ players, scores, teams, setTeams, groups }) {
     setTeams((prev) => prev.map((t) => (t.id === id ? { ...t, name } : t)));
   };
 
-  const fmtPts = (n) => (n === 0 ? '—' : (Math.round(n * 10) / 10).toString());
+  const fmtPts = (n) => (Math.round(n * 10) / 10).toString();
 
   return (
     <section className="mt-10">
@@ -2214,6 +2227,7 @@ function Teams({ players, scores, teams, setTeams, groups }) {
               members={members}
               roundResults={roundResults}
               perRoundPoints={row.perRound}
+              perRoundPlayed={row.played}
               total={row.total}
               fmtPts={fmtPts}
               onRename={(name) => updateName(row.team.id, name)}
@@ -2231,8 +2245,8 @@ function Teams({ players, scores, teams, setTeams, groups }) {
   );
 }
 
-function TeamCard({ rank, team, members, roundResults, perRoundPoints, total, fmtPts, onRename }) {
-  const hasAny = total > 0;
+function TeamCard({ rank, team, members, roundResults, perRoundPoints, perRoundPlayed, total, fmtPts, onRename }) {
+  const hasAny = perRoundPlayed.some(Boolean);
   const [openRound, setOpenRound] = useState(null);
   return (
     <div className="rounded overflow-hidden" style={{ background: 'white', border: `1px solid ${C.rule}` }}>
@@ -2291,6 +2305,7 @@ function TeamCard({ rank, team, members, roundResults, perRoundPoints, total, fm
           {ROUNDS.map((r, idx) => {
             const rr = roundResults[idx];
             const pts = perRoundPoints[idx] ?? 0;
+            const played = perRoundPlayed[idx];
             const course = COURSES.find((c) => c.id === r.courseId);
             let scoreLabel = '—';
             let formatLabel = '—';
@@ -2348,8 +2363,8 @@ function TeamCard({ rank, team, members, roundResults, perRoundPoints, total, fm
                   </td>
                   <td className="py-2 px-3 text-right smallcaps text-[10px]" style={{ color: '#6b6555' }}>{formatLabel}</td>
                   <td className="py-2 px-3 text-right font-mono text-xs" style={{ color: C.ink }}>{scoreLabel}</td>
-                  <td className="py-2 px-3 text-right font-mono" style={{ color: pts > 0 ? C.greenDk : '#bfb89e' }}>
-                    {pts > 0 ? fmtPts(pts) : '—'}
+                  <td className="py-2 px-3 text-right font-mono" style={{ color: played ? C.greenDk : '#bfb89e' }}>
+                    {played ? fmtPts(pts) : '—'}
                   </td>
                 </tr>
                 {isOpen && hasDetail && (
@@ -2742,7 +2757,7 @@ function Skins({ players, scores, groups }) {
 // ============================================================
 // COURSES — scorecards & hole-by-hole
 // ============================================================
-function Courses() {
+function Courses({ groups }) {
   const [selectedId, setSelectedId] = useState(null);
   const selected = COURSES.find((c) => c.id === selectedId);
 
@@ -2753,7 +2768,10 @@ function Courses() {
       <SectionTitle eyebrow="Reunion Resort & Golf Club" title="The Courses" />
 
       <div className="grid md:grid-cols-3 gap-5">
-        {COURSES.map((c) => {
+        {ROUNDS.map((r) => {
+          // Listed in play order; first tee time comes from the round's Group 1.
+          const c = COURSES.find((x) => x.id === r.courseId);
+          const firstTee = groups?.[r.id]?.[0]?.teeTime;
           const total = c.holes.reduce((a, h) => a + h.par, 0);
           const longest = Math.max(...c.holes.map((h) => h.yards[0]));
           const yardsTotal = c.holes.reduce((a, h) => a + h.yards[0], 0);
@@ -2793,8 +2811,8 @@ function Courses() {
                   <span><span className="font-mono" style={{ color: C.greenDk }}>{longest}</span> longest</span>
                 </div>
                 <div className="mt-3 smallcaps text-[11px] flex items-center gap-2" style={{ color: C.goldDk }}>
-                  <span>Tee time</span>
-                  <span className="font-mono" style={{ color: C.greenDk }}>00:00</span>
+                  <span>{r.day} {r.date} · First tee</span>
+                  <span className="font-mono" style={{ color: C.greenDk }}>{firstTee || '—'}</span>
                 </div>
                 <div className="mt-3 smallcaps text-[11px] flex items-center gap-2" style={{ color: C.greenDk }}>
                   View scorecard <ChevronRight size={12} />
@@ -3017,7 +3035,8 @@ function Scorecard({ players, scores, setScores, teams, groups }) {
       const next = { ...prev };
       if (!next[activeRound]) next[activeRound] = {};
       const arr = [...(next[activeRound][playerId] || Array(18).fill(null))];
-      arr[holeIdx] = Number.isFinite(v) ? Math.max(1, Math.min(15, v)) : null;
+      const max = maxHoleScore(course.holes[holeIdx].par);
+      arr[holeIdx] = Number.isFinite(v) && v >= 1 && v <= max ? v : null;
       next[activeRound] = { ...next[activeRound], [playerId]: arr };
       return next;
     });
@@ -3331,7 +3350,15 @@ function NineTable({ label, totalLabel, holes, holeOffset, playerScores, onSetHo
   );
 }
 
+// Highest score accepted on a hole (triple par). Anything above it — or a 0 —
+// is almost certainly a typo like a double-tapped "44", so it is shown in red
+// and not saved until corrected.
+const maxHoleScore = (par) => par * 3;
+
 function ScoreInput({ value, par, onChange, disabled }) {
+  const [draft, setBadDraft] = useState(null);
+  // A saved score (e.g. arriving from another phone) always wins over a stale typo.
+  const badDraft = Number.isFinite(value) ? null : draft;
   const filled = Number.isFinite(value);
   const diff = filled ? value - par : 0;
   // Augusta-style score color
@@ -3347,19 +3374,27 @@ function ScoreInput({ value, par, onChange, disabled }) {
     <input
       type="text"
       inputMode="numeric"
-      value={value ?? ''}
+      value={badDraft ?? value ?? ''}
       readOnly={disabled}
       onChange={(e) => {
         if (disabled) return;
         const digits = e.target.value.replace(/\D/g, '').slice(0, 2);
-        onChange(digits);
+        const n = parseInt(digits, 10);
+        const ok = digits === '' || (n >= 1 && n <= maxHoleScore(par));
+        setBadDraft(ok ? null : digits);
+        onChange(ok ? digits : '');
       }}
       placeholder="—"
-      className="w-full text-center font-mono text-sm bg-transparent outline-none rounded py-1 px-0 transition-colors"
+      title={badDraft ? `Not saved — max ${maxHoleScore(par)} on a par ${par}` : undefined}
+      aria-invalid={!!badDraft}
+      // 16px text stops iPhone Safari from zooming in on every tap.
+      className="w-full text-center font-mono text-base bg-transparent outline-none rounded py-2 px-0 transition-colors"
       style={{
-        border: `1px solid ${filled ? C.gold : C.rule}`,
-        color,
-        fontWeight: filled ? 600 : 400,
+        border: badDraft ? '2px solid #C62828' : `1px solid ${filled ? C.gold : C.rule}`,
+        background: badDraft ? '#FDECEA' : 'transparent',
+        color: badDraft ? '#C62828' : color,
+        fontWeight: filled || badDraft ? 600 : 400,
+        textDecoration: badDraft ? 'line-through' : 'none',
       }}
     />
   );
