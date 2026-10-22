@@ -241,9 +241,39 @@ sandbox blocks DNS resolution to supabase.co.
   dashboard is fully populated for testing. Scores were randomized
   with per-player per-round "moods" so there's realistic variation
   (hot days, cold days, blow-up holes, etc.).
-- R3 auto-pairs may need to be reset to empty slots if you want them
-  to re-populate from current Mankles standings on load.
+- The R3 pairings in the live data are stale (seeded from older test
+  scores). The reset script below empties them.
 - Ben is reviewing UI/UX before the actual tournament.
+- Oct 22 test pass: team points, Mankles and skins were recomputed
+  independently and match the live site exactly.
+
+## Pre-tournament reset (prepared, NOT yet run)
+
+Run 1-2 days before Nov 4, only when Ben says go. All three
+read `.env.local` themselves; Bash needs `dangerouslyDisableSandbox`.
+
+```bash
+npm run reset:check                          # dry run: backup + preview, writes nothing
+npm run reset:go                             # backup, then clear all scores + R3 slots
+npm run restore -- backups/<file>.json       # dry run of an undo
+npm run restore -- backups/<file>.json --confirm
+```
+
+- Every run saves `backups/<timestamp>-<label>.json` first (gitignored —
+  contains flight info; the folder syncs via iCloud Desktop).
+- Reset keeps players, handicaps, teams, flight info, R1/R2 pairings and
+  R3 tee times. It aborts if the live data changed mid-run, then
+  re-reads to verify.
+- Afterwards everyone should refresh the site once: a phone that slept
+  through the realtime update still holds the old state, and if it then
+  edits a score it would upload the old test scores back over the reset.
+
+## Scoring details added Oct 22
+
+- Mankles ties → most gross birdies-or-better across all rounds (also
+  orders R3 auto-seeding). Still tied after that = arbitrary order.
+- Score entry accepts 1 to triple par per hole; anything else shows red,
+  struck through, and is saved as empty until corrected.
 
 ## Pending items
 
@@ -270,5 +300,5 @@ sandbox blocks DNS resolution to supabase.co.
 
 Git commits end with:
 ```
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ```
