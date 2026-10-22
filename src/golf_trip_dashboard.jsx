@@ -810,6 +810,8 @@ function Nav({ tab, setTab }) {
 function Leaderboard({ players, scores, teams, groups }) {
   const teamName = (id) => (teams || []).find((t) => t.id === id)?.name || '';
   const courseById = (id) => COURSES.find((c) => c.id === id);
+  const [showRules, setShowRules] = useState(false);
+  const [shareStatus, setShareStatus] = useState('');
 
   const { teamTotals, mankles, roundResults } = useMemo(
     () => computeStandings(ROUNDS, teams, players, scores, courseById, groups),
@@ -819,12 +821,72 @@ function Leaderboard({ players, scores, teams, groups }) {
   const anyScores = teamTotals.some((t) => t.total > 0) || mankles.some((m) => m.filled > 0);
   const fmtPts = (n) => (n === 0 ? '—' : (Math.round(n * 10) / 10).toString());
 
+  const buildShareText = () => {
+    const lines = [];
+    lines.push('🏌️ DW INVITATIONAL 2026 — LIVE LEADERBOARD');
+    lines.push('');
+    lines.push('TEAM STANDINGS');
+    teamTotals.forEach((row, i) => {
+      const marker = row.total > 0 ? `${i + 1}.` : '—';
+      lines.push(`${marker} ${row.team.name} — ${fmtPts(row.total)} pts`);
+    });
+    lines.push('');
+    lines.push('MANKLES LEADERS');
+    mankles.slice(0, 5).forEach((row, i) => {
+      lines.push(`${i + 1}. ${row.player.name} — ${row.total} pts`);
+    });
+    lines.push('');
+    lines.push('https://dw-invitational-2026.netlify.app');
+    return lines.join('\n');
+  };
+
+  const share = async () => {
+    const text = buildShareText();
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'DW Invitational Leaderboard', text });
+        setShareStatus('Shared');
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(text);
+        setShareStatus('Copied to clipboard');
+      } else {
+        setShareStatus('Copy manually');
+      }
+    } catch {
+      setShareStatus('');
+    }
+    setTimeout(() => setShareStatus(''), 2200);
+  };
+
   return (
     <section className="mt-10">
       <div className="flex justify-center mb-2">
         <GoldSeal size={56} />
       </div>
       <SectionTitle eyebrow="Live Standings" title="The Leaderboard" />
+
+      {/* Action strip */}
+      <div className="flex items-center justify-center gap-3 mb-6 flex-wrap">
+        <button
+          onClick={share}
+          className="smallcaps text-[11px] px-3 py-2 rounded flex items-center gap-1.5"
+          style={{ background: C.greenDk, color: C.gold, border: `1px solid ${C.greenDk}` }}
+        >
+          Share Leaderboard
+        </button>
+        <button
+          onClick={() => setShowRules(true)}
+          className="smallcaps text-[11px] px-3 py-2 rounded"
+          style={{ background: 'white', color: C.greenDk, border: `1px solid ${C.rule}` }}
+        >
+          How Scoring Works
+        </button>
+        {shareStatus && (
+          <span className="text-[11px] italic" style={{ color: C.goldDk }}>{shareStatus}</span>
+        )}
+      </div>
+
+      {showRules && <RulesModal onClose={() => setShowRules(false)} />}
 
       {!anyScores && (
         <div className="mb-6 p-4 text-sm rounded" style={{ background: C.creamLt, border: `1px solid ${C.rule}` }}>
@@ -936,6 +998,100 @@ function Leaderboard({ players, scores, teams, groups }) {
         (Eagle 8 · Birdie 4 · Par 2 · Bogey 1 · Double 0 · Triple+ −1).
       </p>
     </section>
+  );
+}
+
+// ============================================================
+// RULES MODAL — scoring & format reference
+// ============================================================
+function RulesModal({ onClose }) {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  const Section = ({ title, children }) => (
+    <div className="mb-5">
+      <div className="smallcaps text-[11px] mb-1.5" style={{ color: C.goldDk }}>{title}</div>
+      <div className="text-sm leading-relaxed" style={{ color: C.ink }}>{children}</div>
+    </div>
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(6,58,38,0.55)' }}
+      onClick={onClose}
+    >
+      <div
+        className="rounded-lg max-w-xl w-full max-h-[90vh] overflow-y-auto"
+        style={{ background: C.cream, border: `1px solid ${C.rule}` }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 py-4 flex items-center justify-between sticky top-0" style={{ background: C.greenDk, color: C.cream }}>
+          <div>
+            <div className="smallcaps text-[11px]" style={{ color: C.gold }}>Reference</div>
+            <div className="font-display text-2xl">How Scoring Works</div>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="smallcaps text-[11px] px-3 py-1.5 rounded"
+            style={{ background: C.gold, color: C.greenDkr }}
+          >
+            Close
+          </button>
+        </div>
+        <div className="px-6 py-5">
+          <Section title="Team Scoring — Rounds 1 & 2 (Best Ball)">
+            For each hole, your team's score is the sum of the two lowest
+            net scores from the three team members. Teams rank 1–5 on
+            best-ball total; points awarded <b>20 / 15 / 10 / 5 / 0</b>.
+          </Section>
+          <Section title="Team Scoring — Round 3 (Singles Net)">
+            Each player's net score for Nicklaus is ranked across the whole
+            field (1st = lowest net). Points go to the player's team:
+            <b> 15, 14, 13 … down to 1</b>.
+          </Section>
+          <Section title="Handicap Strokes">
+            Everyone strokes off the lowest handicap in the field (Frank
+            Barta, 8). Your strokes = <code>yourHcp − 8</code>, allocated
+            to the hardest holes first (hole handicap 1 → H). The dashboard
+            shows these as gold dots over each hole number on the Scorecard.
+          </Section>
+          <Section title="Mankles — Individual Award">
+            Each round: <code>handicap + Stableford points</code>. Points
+            per hole on <i>gross vs par</i>:
+            <ul className="list-disc pl-5 mt-1">
+              <li>Eagle or better = <b>8</b></li>
+              <li>Birdie = <b>4</b></li>
+              <li>Par = <b>2</b></li>
+              <li>Bogey = <b>1</b></li>
+              <li>Double bogey = <b>0</b></li>
+              <li>Triple+ = <b>−1</b></li>
+            </ul>
+            Total across all 3 rounds wins the Mankles.
+          </Section>
+          <Section title="Skins — Side Game ($180/round)">
+            Lowest <i>net</i> score on a hole wins the skin. Ties mean no
+            skin on that hole (no carry-overs). Each round's $180 pot is
+            split evenly across however many skins were won — e.g. 5 skins
+            on Watson = $36 per skin.
+          </Section>
+          <Section title="R3 Pairings">
+            Day-3 groups auto-populate from the Mankles standings after
+            R1 & R2: lowest total tees off first (10:50 AM group of 3),
+            leaders tee off last (11:20 AM).
+          </Section>
+        </div>
+      </div>
+    </div>
   );
 }
 
