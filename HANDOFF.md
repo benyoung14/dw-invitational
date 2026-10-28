@@ -252,7 +252,7 @@ sandbox blocks DNS resolution to supabase.co.
 - Oct 22 test pass: team points, Mankles and skins were recomputed
   independently and match the live site exactly.
 
-## Pre-tournament reset (prepared, NOT yet run)
+## Pre-tournament reset (DONE Oct 28, 2026 — scores + R3 slots cleared; backup in backups/2026-10-28T18-15-51-before-reset.json)
 
 Run 1-2 days before Nov 4, only when Ben says go. All three
 read `.env.local` themselves; Bash needs `dangerouslyDisableSandbox`.
