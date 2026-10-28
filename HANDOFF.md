@@ -11,6 +11,11 @@ of friends; the organizer (not Ben) sets the format and sends scoring
 sheets.
 
 - **Live site:** https://dw-invitational-2026.netlify.app
+- **Backup site:** https://benyoung14.github.io/dw-invitational/ (GitHub
+  Pages, built by `.github/workflows/pages.yml` on every push; same
+  Supabase data). Added Oct 28 after Netlify started returning 500s.
+  Needs repo secrets `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`
+  and Pages source = GitHub Actions.
 - **GitHub:** https://github.com/benyoung14/dw-invitational
 - **Supabase project ref:** `bmhoynvqpvgxlxvowtil`
 

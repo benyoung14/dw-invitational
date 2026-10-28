@@ -1040,7 +1040,8 @@ function Leaderboard({ players, scores, teams, groups }) {
       lines.push(`${i + 1}. ${row.player.name} — ${row.total} pts`);
     });
     lines.push('');
-    lines.push('https://dw-invitational-2026.netlify.app');
+    // Whatever host the page is served from (Netlify or the GitHub Pages backup).
+    lines.push(window.location.origin + import.meta.env.BASE_URL);
     return lines.join('\n');
   };
 
