@@ -307,3 +307,13 @@ Git commits end with:
 ```
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ```
+
+## Offline Excel backup (Oct 28, 2026)
+`DW Invitational 2026 - Backup Scoring.xlsx` (project root) is a blank, formula-driven scoring
+workbook for use if both websites are down. Same rules as the dashboard: strokes off the low man,
+R1/R2 best ball → 20/15/10/5/0, R3 singles → 15…1, Mankles with birdie tiebreak, $180 net skins.
+Verified in Excel against the pre-reset test scores: team points, all 15 Mankles totals/order and
+all skins payouts matched the dashboard. Rebuild with
+`python3 scripts/build-backup-xlsx.py backups/<file>.json out.xlsx` (add `--with-scores` to load
+that backup's scores), then open and save once in Excel so the values are calculated.
+Roster must stay ordered by team (3 per team) — the best-ball formulas rely on it.
