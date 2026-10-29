@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, Fragment as ReactFragment } from 'react';
 const React = { Fragment: ReactFragment };
-import { Trophy, Calendar, Users, ClipboardList, Flag, ChevronLeft, ChevronRight, Shield } from 'lucide-react';
+import { Trophy, Calendar, Users, ClipboardList, Flag, ChevronLeft, ChevronRight, Shield, Sun, CloudSun, Cloud, CloudFog, CloudDrizzle, CloudRain, CloudLightning, Snowflake, Droplets, Wind } from 'lucide-react';
 import logoUrl from './assets/logo.svg';
 import { supabase, TABLE, SHARED_ROW_ID } from './supabase';
 
@@ -582,6 +582,7 @@ export default function GolfTripDashboard() {
 
       <Header onLogoClick={() => setTab('leaderboard')} />
       <MankTicker players={players} scores={scores} teams={teams} groups={groups} onClick={() => setTab('leaderboard')} />
+      <WeatherStrip />
       <Nav tab={tab} setTab={setTab} />
 
       <main className="relative max-w-[1500px] mx-auto px-6 pb-20">
@@ -908,6 +909,128 @@ function MankTicker({ players, scores, teams, groups, onClick }) {
         <span aria-hidden="true">{content}</span>
       </div>
     </button>
+  );
+}
+
+// ============================================================
+// WEATHER — round-day forecast for Reunion Resort (Open-Meteo,
+// free, no key). Last good forecast is cached so the strip still
+// shows something if the weather service is slow or offline.
+// ============================================================
+const WEATHER_URL =
+  'https://api.open-meteo.com/v1/forecast?latitude=28.2636&longitude=-81.5884' +
+  '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max' +
+  '&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FNew_York&past_days=7&forecast_days=16';
+const WEATHER_CACHE_KEY = 'dw-weather-v1';
+const ROUND_DATES = { r1: '2026-11-05', r2: '2026-11-06', r3: '2026-11-07' };
+
+const weatherLook = (code) => {
+  if (code === 0) return { label: 'Sunny', Icon: Sun };
+  if (code <= 2) return { label: 'Partly cloudy', Icon: CloudSun };
+  if (code === 3) return { label: 'Cloudy', Icon: Cloud };
+  if (code <= 48) return { label: 'Fog', Icon: CloudFog };
+  if (code <= 57) return { label: 'Drizzle', Icon: CloudDrizzle };
+  if (code <= 67) return { label: 'Rain', Icon: CloudRain };
+  if (code <= 77) return { label: 'Snow', Icon: Snowflake };
+  if (code <= 82) return { label: 'Showers', Icon: CloudRain };
+  if (code <= 86) return { label: 'Snow showers', Icon: Snowflake };
+  return { label: 'Thunderstorms', Icon: CloudLightning };
+};
+
+function WeatherStrip() {
+  const [wx, setWx] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(WEATHER_CACHE_KEY)) || null; } catch { return null; }
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(WEATHER_URL);
+        if (!res.ok) return;
+        const d = (await res.json()).daily;
+        const days = {};
+        d.time.forEach((t, i) => {
+          days[t] = {
+            code: d.weather_code[i],
+            hi: d.temperature_2m_max[i],
+            lo: d.temperature_2m_min[i],
+            rain: d.precipitation_probability_max[i],
+            wind: d.wind_speed_10m_max[i],
+          };
+        });
+        const next = { days, fetchedAt: Date.now() };
+        if (cancelled) return;
+        setWx(next);
+        try { localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify(next)); } catch { /* storage full or blocked */ }
+      } catch { /* offline — keep the cached forecast */ }
+    };
+    load();
+    const id = setInterval(load, 30 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  const updated = wx?.fetchedAt
+    ? new Date(wx.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : null;
+
+  return (
+    <section className="w-full" style={{ background: C.creamLt, borderBottom: `1px solid ${C.rule}` }} aria-label="Round-day weather">
+      <div className="max-w-[1500px] mx-auto px-3 md:px-6 py-3">
+        <div className="flex items-baseline justify-between mb-2 px-1">
+          <span className="smallcaps text-[10px] md:text-xs" style={{ color: C.goldDk }}>Round-day forecast · Reunion, FL</span>
+          {updated && <span className="text-[10px] md:text-xs" style={{ color: C.goldDk, opacity: 0.8 }}>Updated {updated}</span>}
+        </div>
+        <div className="grid grid-cols-3 gap-2 md:gap-4">
+          {ROUNDS.map((r) => {
+            const day = wx?.days?.[ROUND_DATES[r.id]];
+            const ok = day && Number.isFinite(day.hi);
+            const look = ok ? weatherLook(day.code) : null;
+            const Icon = look?.Icon;
+            const wet = ok && day.rain >= 40;
+            return (
+              <div
+                key={r.id}
+                className="rounded-md px-2 py-2 lg:px-4 lg:py-3 flex flex-col lg:flex-row lg:items-center gap-1 lg:gap-5"
+                style={{ background: '#fff', border: `1px solid ${C.rule}` }}
+              >
+                <div className="lg:w-28 shrink-0">
+                  <div className="smallcaps text-[10px] md:text-xs" style={{ color: C.goldDk }}>{r.day.slice(0, 3)} · {r.date}</div>
+                  <div className="font-display text-sm md:text-lg leading-tight" style={{ color: C.greenDk }}>{r.course.split(' ').pop()}</div>
+                </div>
+                {ok ? (
+                  <div className="flex flex-col lg:flex-row lg:items-center gap-1 lg:gap-5 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Icon size={26} strokeWidth={1.6} style={{ color: wet ? C.green : C.goldDk }} aria-hidden="true" />
+                      <div className="leading-tight">
+                        <div className="font-mono text-sm md:text-base whitespace-nowrap" style={{ color: C.ink }}>
+                          {Math.round(day.hi)}°<span style={{ opacity: 0.55 }}> / {Math.round(day.lo)}°</span>
+                        </div>
+                        <div className="text-[10px] md:text-xs whitespace-nowrap" style={{ color: C.ink, opacity: 0.7 }}>{look.label}</div>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap lg:flex-col gap-x-2.5 gap-y-0.5 text-[11px] md:text-sm" style={{ color: C.ink }}>
+                      <span className="inline-flex items-center gap-1 whitespace-nowrap" title="Chance of rain">
+                        <Droplets size={14} aria-hidden="true" style={{ color: C.green }} />
+                        <span className="font-mono" style={{ fontWeight: wet ? 700 : 400 }}>{Math.round(day.rain ?? 0)}%</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1 whitespace-nowrap" title="Top wind speed">
+                        <Wind size={14} aria-hidden="true" style={{ color: C.goldDk }} />
+                        <span className="font-mono">{Math.round(day.wind)}<span className="text-[10px]"> mph</span></span>
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-[11px] md:text-sm" style={{ color: C.ink, opacity: 0.6 }}>
+                    {wx ? 'Forecast not out yet' : 'Loading forecast…'}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
   );
 }
 
