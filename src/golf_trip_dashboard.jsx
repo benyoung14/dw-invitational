@@ -991,31 +991,31 @@ function WeatherStrip() {
             return (
               <div
                 key={r.id}
-                className="rounded-md px-2 py-2 lg:px-4 lg:py-3 flex flex-col lg:flex-row lg:items-center gap-1 lg:gap-5"
+                className="rounded-md px-2 py-2 md:px-4 md:py-3 min-w-0 flex flex-col gap-1.5"
                 style={{ background: '#fff', border: `1px solid ${C.rule}` }}
               >
-                <div className="lg:w-28 shrink-0">
+                <div className="min-w-0">
                   <div className="smallcaps text-[10px] md:text-xs" style={{ color: C.goldDk }}>{r.day.slice(0, 3)} · {r.date}</div>
                   <div className="font-display text-sm md:text-lg leading-tight" style={{ color: C.greenDk }}>{r.course.split(' ').pop()}</div>
                 </div>
                 {ok ? (
-                  <div className="flex flex-col lg:flex-row lg:items-center gap-1 lg:gap-5 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Icon size={26} strokeWidth={1.6} style={{ color: wet ? C.green : C.goldDk }} aria-hidden="true" />
-                      <div className="leading-tight">
-                        <div className="font-mono text-sm md:text-base whitespace-nowrap" style={{ color: C.ink }}>
-                          {Math.round(day.hi)}°<span style={{ opacity: 0.55 }}> / {Math.round(day.lo)}°</span>
+                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 min-w-0">
+                    <div className="flex items-center gap-1 md:gap-2 min-w-0">
+                      <Icon className="w-[18px] h-[18px] md:w-7 md:h-7 shrink-0" strokeWidth={1.6} style={{ color: wet ? C.green : C.goldDk }} aria-hidden="true" />
+                      <div className="leading-tight min-w-0">
+                        <div className="font-mono text-[12px] min-[400px]:text-[13px] md:text-base" style={{ color: C.ink }}>
+                          <span className="whitespace-nowrap">{Math.round(day.hi)}°</span><span className="whitespace-nowrap" style={{ opacity: 0.55 }}>/{Math.round(day.lo)}°</span>
                         </div>
-                        <div className="text-[10px] md:text-xs whitespace-nowrap" style={{ color: C.ink, opacity: 0.7 }}>{look.label}</div>
+                        <div className="text-[10px] md:text-xs" style={{ color: C.ink, opacity: 0.7 }}>{look.label}</div>
                       </div>
                     </div>
-                    <div className="flex flex-wrap lg:flex-col gap-x-2.5 gap-y-0.5 text-[11px] md:text-sm" style={{ color: C.ink }}>
+                    <div className="flex flex-wrap md:flex-col gap-x-2 gap-y-0.5 text-[11px] md:text-sm min-w-0" style={{ color: C.ink }}>
                       <span className="inline-flex items-center gap-1 whitespace-nowrap" title="Chance of rain">
-                        <Droplets size={14} aria-hidden="true" style={{ color: C.green }} />
+                        <Droplets size={13} className="shrink-0" aria-hidden="true" style={{ color: C.green }} />
                         <span className="font-mono" style={{ fontWeight: wet ? 700 : 400 }}>{Math.round(day.rain ?? 0)}%</span>
                       </span>
                       <span className="inline-flex items-center gap-1 whitespace-nowrap" title="Top wind speed">
-                        <Wind size={14} aria-hidden="true" style={{ color: C.goldDk }} />
+                        <Wind size={13} className="shrink-0" aria-hidden="true" style={{ color: C.goldDk }} />
                         <span className="font-mono">{Math.round(day.wind)}<span className="text-[10px]"> mph</span></span>
                       </span>
                     </div>
