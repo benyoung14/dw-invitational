@@ -924,17 +924,20 @@ const WEATHER_URL =
 const WEATHER_CACHE_KEY = 'dw-weather-v1';
 const ROUND_DATES = { r1: '2026-11-05', r2: '2026-11-06', r3: '2026-11-07' };
 
-const weatherLook = (code) => {
+// The weather code is the worst hour of the day, so a lone possible storm labels the whole
+// day. Below 40% rain, say "Chance of …" instead so the label matches the rain number.
+const weatherLook = (code, rain) => {
+  const low = (rain ?? 0) < 40;
   if (code === 0) return { label: 'Sunny', Icon: Sun };
   if (code <= 2) return { label: 'Partly cloudy', Icon: CloudSun };
   if (code === 3) return { label: 'Cloudy', Icon: Cloud };
   if (code <= 48) return { label: 'Fog', Icon: CloudFog };
-  if (code <= 57) return { label: 'Drizzle', Icon: CloudDrizzle };
-  if (code <= 67) return { label: 'Rain', Icon: CloudRain };
+  if (code <= 57) return { label: low ? 'Chance of drizzle' : 'Drizzle', Icon: CloudDrizzle };
+  if (code <= 67) return { label: low ? 'Chance of rain' : 'Rain', Icon: CloudRain };
   if (code <= 77) return { label: 'Snow', Icon: Snowflake };
-  if (code <= 82) return { label: 'Showers', Icon: CloudRain };
+  if (code <= 82) return { label: low ? 'Chance of showers' : 'Showers', Icon: CloudRain };
   if (code <= 86) return { label: 'Snow showers', Icon: Snowflake };
-  return { label: 'Thunderstorms', Icon: CloudLightning };
+  return { label: low ? 'Chance of storms' : 'Thunderstorms', Icon: CloudLightning };
 };
 
 function WeatherStrip() {
@@ -985,7 +988,7 @@ function WeatherStrip() {
           {ROUNDS.map((r) => {
             const day = wx?.days?.[ROUND_DATES[r.id]];
             const ok = day && Number.isFinite(day.hi);
-            const look = ok ? weatherLook(day.code) : null;
+            const look = ok ? weatherLook(day.code, day.rain) : null;
             const Icon = look?.Icon;
             const wet = ok && day.rain >= 40;
             return (
