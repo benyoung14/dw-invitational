@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, Fragment as ReactFragment } from 'react';
 const React = { Fragment: ReactFragment };
-import { Trophy, Calendar, Users, ClipboardList, Flag, ChevronLeft, ChevronRight, Shield, Sun, CloudSun, Cloud, CloudFog, CloudDrizzle, CloudRain, CloudLightning, Snowflake, Droplets, Wind, DollarSign, Check } from 'lucide-react';
+import { Trophy, Calendar, Users, ClipboardList, Flag, ChevronLeft, ChevronRight, Shield, Sun, CloudSun, Cloud, CloudFog, CloudDrizzle, CloudRain, CloudLightning, Snowflake, Droplets, Wind, DollarSign, Check, ChevronDown } from 'lucide-react';
 import logoUrl from './assets/logo.svg';
 import { supabase, TABLE, SHARED_ROW_ID } from './supabase';
 import { buildXlsx, downloadBlob } from './xlsx';
@@ -440,6 +440,11 @@ export default function GolfTripDashboard() {
   const [teams, setTeams] = useState(INITIAL_TEAMS);
   const [groups, setGroups] = useState(INITIAL_GROUPS);
   const [loaded, setLoaded] = useState(false);
+  // When scores last changed (any phone). Saved beside the data as `scoresAt`;
+  // older rows fall back to the row's updated_at.
+  const [scoresAt, setScoresAt] = useState(null);
+  const scoresAtRef = useRef(null);
+  const savedScoresRef = useRef(null);
   const saveTimer = useRef(null);
   const lastSyncedRef = useRef(null);
   const stateRef = useRef({ players, scores, teams, groups });
@@ -451,6 +456,12 @@ export default function GolfTripDashboard() {
     stateRef.current.groups === INITIAL_GROUPS &&
     Object.keys(stateRef.current.scores).length === 0
   );
+
+  const noteScoresAt = (s, rowUpdatedAt) => {
+    const at = s?.scoresAt || rowUpdatedAt || null;
+    if (s?.scores) savedScoresRef.current = JSON.stringify(s.scores);
+    if (at) { scoresAtRef.current = at; setScoresAt(at); }
+  };
 
   const applyState = (s) => {
     if (!s) return;
@@ -478,7 +489,7 @@ export default function GolfTripDashboard() {
     if (supabase) {
       supabase
         .from(TABLE)
-        .select('data')
+        .select('data, updated_at')
         .eq('id', SHARED_ROW_ID)
         .maybeSingle()
         .then(({ data, error }) => {
@@ -486,7 +497,7 @@ export default function GolfTripDashboard() {
           if (error) console.warn('[supabase] load error', error);
           // If the user has already started editing before the fetch resolved,
           // don't clobber their work with the remote snapshot.
-          if (isPristine()) applyState(data?.data);
+          if (isPristine()) { applyState(data?.data); noteScoresAt(data?.data, data?.updated_at); }
           setLoaded(true);
         });
 
@@ -495,13 +506,13 @@ export default function GolfTripDashboard() {
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: TABLE, filter: `id=eq.${SHARED_ROW_ID}` },
-          (payload) => applyState(payload.new?.data),
+          (payload) => { applyState(payload.new?.data); noteScoresAt(payload.new?.data, payload.new?.updated_at); },
         )
         .subscribe();
     } else {
       try {
         const raw = localStorage.getItem('dw-invitational-v2');
-        if (raw && isPristine()) applyState(JSON.parse(raw));
+        if (raw && isPristine()) { const saved = JSON.parse(raw); applyState(saved); noteScoresAt(saved); }
       } catch {}
       setLoaded(true);
     }
@@ -525,13 +536,21 @@ export default function GolfTripDashboard() {
       // Mark in-flight snapshot as synced BEFORE the network call so the echo
       // for this save is recognized as our own and skipped by applyState.
       lastSyncedRef.current = serialized;
+      const now = new Date().toISOString();
+      const scoresJson = JSON.stringify(payload.scores);
+      if (scoresJson !== savedScoresRef.current) {
+        savedScoresRef.current = scoresJson;
+        scoresAtRef.current = now;
+        setScoresAt(now);
+      }
+      const data = scoresAtRef.current ? { ...payload, scoresAt: scoresAtRef.current } : payload;
       if (supabase) {
         const { error } = await supabase
           .from(TABLE)
-          .upsert({ id: SHARED_ROW_ID, data: payload, updated_at: new Date().toISOString() });
+          .upsert({ id: SHARED_ROW_ID, data, updated_at: now });
         if (error) console.warn('[supabase] save error', error);
       } else {
-        try { localStorage.setItem('dw-invitational-v2', JSON.stringify(payload)); } catch {}
+        try { localStorage.setItem('dw-invitational-v2', JSON.stringify(data)); } catch {}
       }
     }, 350);
 
@@ -589,6 +608,7 @@ export default function GolfTripDashboard() {
       <main className="relative max-w-[1500px] mx-auto px-6 pb-20">
         <TopoPattern opacity={0.04} />
         <div className="relative" style={{ zIndex: 1 }}>
+        {['leaderboard', 'teams', 'payouts', 'scorecard'].includes(tab) && <ScoresUpdated at={scoresAt} scores={scores} />}
         {tab === 'leaderboard' && <Leaderboard players={players} scores={scores} teams={teams} groups={groups} />}
         {tab === 'schedule'    && <Schedule players={players} groups={groups} setGroups={setGroups} />}
         {tab === 'roster'      && <Roster players={players} setPlayers={setPlayers} teams={teams} />}
@@ -600,6 +620,26 @@ export default function GolfTripDashboard() {
       </main>
 
       <Footer state={{ players, scores, teams, groups }} />
+    </div>
+  );
+}
+
+// "Scores updated Thu 4:12 PM" — so everyone can tell they're looking at the latest.
+function ScoresUpdated({ at, scores }) {
+  const hasScores = ROUNDS.some((r) => Object.keys(scores?.[r.id] || {}).length > 0);
+  if (!hasScores || !at) return null;
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return null;
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const days = (Date.now() - d.getTime()) / 86400000;
+  const when = new Date().toDateString() === d.toDateString()
+    ? `today ${time}`
+    : days < 6
+      ? `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${time}`
+      : `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${time}`;
+  return (
+    <div className="pt-4 -mb-6 text-center text-[11px] italic" style={{ color: '#8e8870' }}>
+      Scores updated {when}
     </div>
   );
 }
@@ -1058,7 +1098,7 @@ function Nav({ tab, setTab }) {
   const Tab = ({ id, label, short, Icon, active, onClick }) => (
     <button
       onClick={onClick}
-      className="relative flex-1 md:flex-initial px-1 md:px-4 py-3 md:py-4 smallcaps flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 transition-colors text-[10px] md:text-xs"
+      className="relative flex-1 md:flex-initial px-1 md:px-2 lg:px-4 py-3 md:py-4 smallcaps flex flex-col md:flex-row items-center justify-center gap-1 md:gap-1.5 lg:gap-2 transition-colors text-[10px] md:text-xs"
       style={{ color: active ? C.greenDk : '#6b6555' }}
     >
       <Icon size={16} strokeWidth={1.5} />
@@ -1072,7 +1112,7 @@ function Nav({ tab, setTab }) {
 
   return (
     <nav className="border-b relative" style={{ background: C.creamLt, borderColor: C.rule }}>
-      <div className="max-w-6xl mx-auto px-2 md:px-4 flex items-center justify-between md:justify-center gap-0 md:gap-6">
+      <div className="max-w-6xl mx-auto px-2 md:px-4 flex items-center justify-between md:justify-center gap-0 md:gap-1 lg:gap-6">
         {PRIMARY.map((item) => (
           <Tab key={item.id} {...item} active={tab === item.id} onClick={() => { setTab(item.id); setMoreOpen(false); }} />
         ))}
@@ -1150,7 +1190,7 @@ function Leaderboard({ players, scores, teams, groups }) {
   );
 
   // Mankles prize money appears once every round is fully scored.
-  const { allDone, manklesPrize } = useMemo(
+  const { allDone, manklesPrize, rounds: payRounds } = useMemo(
     () => computePayouts({ players, scores, teams, groups }),
     [players, scores, teams, groups]
   );
@@ -1225,6 +1265,8 @@ function Leaderboard({ players, scores, teams, groups }) {
       </div>
 
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
+
+      <RoundRecaps rounds={payRounds} players={players} scores={scores} />
 
       {!anyScores && (
         <div className="mb-6 p-4 text-sm rounded" style={{ background: C.creamLt, border: `1px solid ${C.rule}` }}>
@@ -1357,6 +1399,202 @@ function Leaderboard({ players, scores, teams, groups }) {
 // ============================================================
 // RULES MODAL — scoring & format reference
 // ============================================================
+// ============================================================
+// ROUND RECAP — a few lighthearted lines per finished round, collapsed by
+// default. Display only: reads the same numbers the leaderboard and payouts use.
+// ============================================================
+const RECAP_LINES = {
+  points: [
+    '{name} put up {n} points. Either a career day or a fraudulent handicap. We all know which.',
+    '{n} points for {name}. Someone pull that GHIN and that bar tab, both are suspicious.',
+    '{name} led the day with {n} points and has already brought it up four times. At dinner. Unprompted.',
+  ],
+  pointsTie: ['{name} tied at {n} points. Neither one is picking up the tab, so everybody loses.'],
+  lowGross: [
+    'Low gross: {name} with {a} {n}. Nobody asked you to try that hard.',
+    '{name} shot {n}. Insufferable for the rest of the trip, effective immediately.',
+    '{name} carded {a} {n} and is pretending it was no big deal. It was. You will hear about it.',
+  ],
+  birdies: [
+    '{name} made {n} birdies. The rest of us made excuses and bad decisions.',
+    'Birdie count: {name} with {n}. Lucky as hell and not even a little humble about it.',
+    '{name} made {n} birdies. Drug testing is scheduled for tomorrow morning.',
+  ],
+  noBirdies: [
+    'Zero birdies from the entire group. Fifteen grown adults, zero birdies. Outstanding work, everyone.',
+    'Not one birdie all day. The course took everyone behind the woodshed.',
+  ],
+  blowUp: [
+    'Blow-up hole: {name} made {a} {n} on hole {hole}, a par {par}. Somebody hide the sharp objects.',
+    '{name} carded {a} {n} on hole {hole} (par {par}). The language on that hole has been reported to the club.',
+    'Hole {hole} absolutely bent {name} over: {n} strokes on a par {par}. Thoughts and prayers.',
+  ],
+  noBlowUp: ['No triple bogeys or worse. Either everyone played well or the scorekeeper is on the take.'],
+  skins: [
+    '{name} robbed the skins pot: {n} {skins} for {amt}. First round is on {first}, and it is not optional.',
+    '{name} walked off with {n} {skins} ({amt}). That money is going straight to the bar. As it should.',
+  ],
+  noSkins: ['Every hole was tied, so no skins. Fifteen golfers, all equally mediocre. Beautiful.'],
+  mostStrokes: [
+    '{name} shot {n}. Got the most golf for the money, and the most beers per stroke.',
+    '{name} posted {a} {n}. The cart girl is on a first-name basis now.',
+    '{name} went {n}. Still showed up to dinner strutting like the champion. Respect.',
+  ],
+};
+
+// A one-time add-on for a certain player: on the first finished round where
+// they get a recap highlight, the matching line gets this tacked on. Keyed by
+// name, then by the kind of line they were mentioned in.
+const RECAP_PLAYER_JABS = {
+  'Nick Roy': {
+    points: 'Great day for Nick, who was still somehow difficult about it.',
+    pointsTie: 'Nick was difficult about sharing it, naturally.',
+    lowGross: 'Best round of the day and Nick still found a way to be difficult.',
+    birdies: 'Nick was still difficult about the ones that lipped out.',
+    skins: 'Nick won money and still got sensitive about the split.',
+    ctp: 'Nick still says his ball was closer on the other one too. Difficult as ever.',
+    blowUp: "Nick is a little sensitive about this one, so don't bring it up. (Bring it up.)",
+    mostStrokes: 'Go easy on him, Nick is sensitive about it.',
+  },
+};
+
+// Same line every time for a given round, so the recap doesn't reshuffle on refresh.
+const pickLine = (key, roundId) => {
+  const list = RECAP_LINES[key];
+  const seed = [...`${roundId}:${key}`].reduce((a, ch) => a + ch.charCodeAt(0), 0);
+  return list[seed % list.length];
+};
+// "an 83", "an 8", "an 11" — everything else takes "a".
+const article = (n) => (/^(8|11$|18$)/.test(String(n)) ? 'an' : 'a');
+const fillLine = (tpl, vals) => tpl.replace(/\{(\w+)\}/g, (_, k) => (k === 'a' ? article(vals.n) : vals[k] ?? ''));
+const joinNames = (list) => (list.length <= 2 ? list.join(' and ') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`);
+
+const buildRecap = (payRound, players, scores) => {
+  const { round, course, standings, skins, ctp } = payRound;
+  const holes = course.holes;
+  const id = round.id;
+  const cards = players.map((p) => ({ player: p, card: scores?.[id]?.[p.id] || [] }));
+  const gross = cards.map((c) => ({ ...c, total: c.card.reduce((a, v) => a + (v || 0), 0) }));
+  const lines = [];
+
+  // Most points (the daily-points prize)
+  const top = standings[0]?.points;
+  const leaders = standings.filter((s) => s.points === top).map((s) => s.player.name);
+  if (top != null) {
+    lines.push({ kind: leaders.length > 1 ? 'pointsTie' : 'points', icon: '🏆', text: fillLine(pickLine(leaders.length > 1 ? 'pointsTie' : 'points', id), { name: joinNames(leaders), n: top }) });
+  }
+
+  // Low gross
+  const low = Math.min(...gross.map((g) => g.total));
+  const lowNames = gross.filter((g) => g.total === low).map((g) => g.player.name);
+  lines.push({ kind: 'lowGross', icon: '🎯', text: fillLine(pickLine('lowGross', id), { name: joinNames(lowNames), n: low }) });
+
+  // Birdies (gross birdie or better)
+  const birdies = cards.map((c) => ({ ...c, n: c.card.filter((v, i) => Number.isFinite(v) && v < holes[i].par).length }));
+  const mostB = Math.max(...birdies.map((b) => b.n));
+  const birdieNames = birdies.filter((b) => b.n === mostB).map((b) => b.player.name);
+  if (mostB === 0) lines.push({ kind: 'noBirdies', icon: '🐦', text: pickLine('noBirdies', id) });
+  else lines.push({ kind: 'birdies', icon: '🐦', text: fillLine(pickLine('birdies', id), { name: joinNames(birdieNames), n: mostB }).replace(/\b1 birdies\b/, '1 birdie') });
+
+  // Skins
+  if (skins && skins.totalSkins > 0) {
+    const most = Math.max(...skins.skinsByPlayer.values());
+    const names = players.filter((p) => skins.skinsByPlayer.get(p.id) === most).map((p) => p.name);
+    lines.push({ kind: 'skins', icon: '💰', text: fillLine(pickLine('skins', id), {
+      name: joinNames(names), first: names[0].split(' ')[0], n: most,
+      skins: most === 1 ? 'skin' : 'skins', amt: fmtUsd(most * skins.payoutPerSkin) + (names.length > 1 ? ' each' : ''),
+    }) });
+  } else {
+    lines.push({ kind: 'noSkins', icon: '💰', text: pickLine('noSkins', id) });
+  }
+
+  // Closest to the pin
+  const [f, b] = ctp;
+  lines.push({ kind: 'ctp', icon: '📍', text: f.winner && f.winner === b.winner
+    ? `${f.winner.name} won both closest-to-the-pins. Dart-thrower.`
+    : `Closest to the pin: ${ctp.map((c) => `${c.winner ? c.winner.name : 'not marked'} (${c.side === 'front' ? 'front 9' : 'back 9'})`).join(' and ')}.` });
+
+  // Blow-up hole: the biggest number over par on one hole (triple bogey or worse)
+  let worst = null;
+  cards.forEach((c) => c.card.forEach((v, i) => {
+    if (!Number.isFinite(v)) return;
+    const over = v - holes[i].par;
+    if (over >= 3 && (!worst || over > worst.over)) worst = { over, name: c.player.name, n: v, hole: holes[i].hole, par: holes[i].par };
+  }));
+  lines.push(worst
+    ? { kind: 'blowUp', icon: '💥', text: fillLine(pickLine('blowUp', id), worst) }
+    : { kind: 'noBlowUp', icon: '💥', text: pickLine('noBlowUp', id) });
+
+  // Most strokes, said kindly
+  const high = Math.max(...gross.map((g) => g.total));
+  const highNames = gross.filter((g) => g.total === high).map((g) => g.player.name);
+  if (high > low) lines.push({ kind: 'mostStrokes', icon: '🍺', text: fillLine(pickLine('mostStrokes', id), { name: joinNames(highNames), n: high }) });
+
+  return lines;
+};
+
+// Every finished round's recap, with each RECAP_PLAYER_JABS add-on placed once:
+// on the first round (in play order) where that player has a highlight.
+const buildRecaps = (rounds, players, scores) => {
+  const recaps = new Map(rounds.map((r) => [r.round.id, buildRecap(r, players, scores)]));
+  Object.entries(RECAP_PLAYER_JABS).forEach(([name, jabs]) => {
+    for (const r of rounds) {
+      const lines = recaps.get(r.round.id);
+      const i = lines.findIndex((l) => l.text.includes(name) && jabs[l.kind]);
+      if (i === -1) continue;
+      lines[i] = { ...lines[i], text: `${lines[i].text} ${jabs[lines[i].kind]}` };
+      break;
+    }
+  });
+  return recaps;
+};
+
+function RoundRecaps({ rounds, players, scores }) {
+  const finished = (rounds || []).filter((r) => r.complete);
+  const done = [...finished].reverse(); // latest first
+  const [open, setOpen] = useState({});
+  if (done.length === 0) return null;
+  const recaps = buildRecaps(finished, players, scores);
+  return (
+    <div className="mb-8 space-y-2">
+      {done.map((r) => {
+        const isOpen = !!open[r.round.id];
+        const lines = recaps.get(r.round.id);
+        return (
+          <div key={r.round.id} className="rounded overflow-hidden" style={{ border: `1px solid ${C.rule}`, background: 'white' }}>
+            <button
+              type="button"
+              onClick={() => setOpen((o) => ({ ...o, [r.round.id]: !o[r.round.id] }))}
+              aria-expanded={isOpen}
+              className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left"
+              style={{ background: C.greenDk, color: C.cream }}
+            >
+              <span>
+                <span className="smallcaps text-[10px] block" style={{ color: C.gold }}>The Daily Recap</span>
+                <span className="font-display text-lg">{r.round.day} at {r.round.course}</span>
+              </span>
+              <span className="flex items-center gap-1.5 smallcaps text-[10px] shrink-0" style={{ color: C.gold }}>
+                {isOpen ? 'Hide' : 'Read it'}
+                <ChevronDown size={16} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }} />
+              </span>
+            </button>
+            {isOpen && (
+              <ul className="px-4 py-3 space-y-2 text-sm" style={{ color: C.ink }}>
+                {lines.map((l) => (
+                  <li key={l.icon} className="flex gap-2.5">
+                    <span aria-hidden="true">{l.icon}</span>
+                    <span>{l.text}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function RulesModal({ onClose }) {
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -3872,6 +4110,8 @@ function Scorecard({ players, scores, setScores, teams, groups }) {
         })}
       </div>
 
+      {unlocked && <CardCheck round={round} players={players} scores={scores} ctp={ctp} />}
+
       {/* PER-PLAYER SCORECARDS */}
       <div className="space-y-4">
         {players.map((p) => (
@@ -3896,6 +4136,36 @@ function Scorecard({ players, scores, setScores, teams, groups }) {
         Type a number into any hole to record a score. Totals update live and save automatically.
       </p>
     </section>
+  );
+}
+
+// Round check-in for the scorekeeper: which cards are still missing or
+// unfinished, and whether both CTPs are marked.
+function CardCheck({ round, players, scores, ctp }) {
+  const counts = players.map((p) => ({
+    player: p,
+    filled: (scores?.[round.id]?.[p.id] || []).filter((v) => Number.isFinite(v)).length,
+  }));
+  const done = counts.filter((c) => c.filled === 18).length;
+  if (counts.every((c) => c.filled === 0)) return null;
+  const partial = counts.filter((c) => c.filled > 0 && c.filled < 18);
+  const notStarted = counts.filter((c) => c.filled === 0);
+  const ctpMissing = ['front', 'back'].filter((side) => !ctp?.[side]).map((side) => (side === 'front' ? 'front 9' : 'back 9'));
+  const allGood = done === players.length && ctpMissing.length === 0;
+  return (
+    <div
+      className="mb-4 px-4 py-3 rounded text-[13px] space-y-0.5"
+      style={allGood
+        ? { background: C.creamLt, border: `1px solid ${C.rule}`, color: C.greenDk }
+        : { background: '#FFF6E0', border: '1px solid #EBCB85', color: '#7A5200' }}
+    >
+      <div className="font-semibold">
+        {allGood ? `✓ All ${players.length} cards in and both CTPs marked` : `${round.day}: ${done} of ${players.length} cards complete`}
+      </div>
+      {partial.length > 0 && <div>Unfinished: {partial.map((c) => `${c.player.name} (${c.filled}/18)`).join(', ')}</div>}
+      {notStarted.length > 0 && <div>Not started: {notStarted.map((c) => c.player.name).join(', ')}</div>}
+      {!allGood && ctpMissing.length > 0 && <div>CTP not marked yet: {ctpMissing.join(' and ')}</div>}
+    </div>
   );
 }
 
@@ -3956,6 +4226,7 @@ function PlayerScorecard({ player, course, teams, round, allPlayers, groups, pla
   const total = playerScores.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
   const totalPar = sumPar(course.holes);
   const toPar = total - sumPar(course.holes.slice(0, filled));
+  const warnings = disabled ? [] : cardWarnings(playerScores, course.holes);
 
   return (
     <div className="rounded overflow-hidden" style={{ border: `1px solid ${C.rule}`, background: 'white' }}>
@@ -3992,6 +4263,13 @@ function PlayerScorecard({ player, course, teams, round, allPlayers, groups, pla
           ))}
         </div>
       </div>
+
+      {warnings.length > 0 && (
+        <div className="px-4 py-2 text-[12px] flex flex-wrap gap-x-3 gap-y-0.5" style={{ background: '#FFF6E0', color: '#7A5200', borderBottom: `1px solid ${C.rule}` }}>
+          <span className="font-semibold">Double-check:</span>
+          {warnings.map((w) => <span key={w}>{w}</span>)}
+        </div>
+      )}
 
       {/* MOBILE: front 9 + back 9 stacked vertically (no horizontal scroll) */}
       {isMobile ? (
@@ -4148,7 +4426,30 @@ function NineTable({ label, totalLabel, holes, holeOffset, playerScores, onSetHo
 // and not saved until corrected.
 const maxHoleScore = (par) => par * 3;
 
+// Scores that are allowed but worth a second look when a card is typed in:
+// an ace on a par 4/5, or 5+ over par on one hole.
+const isUnusualScore = (v, par) => Number.isFinite(v) && ((v === 1 && par >= 4) || v >= par + 5);
+
+// Gentle checks for one card. Nothing here blocks saving — it just points at
+// what to double-check against the paper card.
+const cardWarnings = (playerScores, holes) => {
+  const filled = playerScores.filter((v) => Number.isFinite(v)).length;
+  const out = [];
+  if (filled > 0 && filled < holes.length) {
+    const blank = holes.map((h, i) => (Number.isFinite(playerScores[i]) ? null : h.hole)).filter(Boolean);
+    out.push(blank.length <= 4
+      ? `Blank: hole${blank.length > 1 ? 's' : ''} ${blank.join(', ')}`
+      : `${blank.length} holes still blank`);
+  }
+  holes.forEach((h, i) => {
+    const v = playerScores[i];
+    if (isUnusualScore(v, h.par)) out.push(`Hole ${h.hole}: ${v === 1 ? 'hole-in-one' : v} on a par ${h.par}?`);
+  });
+  return out;
+};
+
 function ScoreInput({ value, par, onChange, disabled }) {
+  const unusual = !disabled && isUnusualScore(value, par);
   const [draft, setBadDraft] = useState(null);
   // A saved score (e.g. arriving from another phone) always wins over a stale typo.
   const badDraft = Number.isFinite(value) ? null : draft;
@@ -4183,8 +4484,8 @@ function ScoreInput({ value, par, onChange, disabled }) {
       // 16px text stops iPhone Safari from zooming in on every tap.
       className="w-full text-center font-mono text-base bg-transparent outline-none rounded py-2 px-0 transition-colors"
       style={{
-        border: badDraft ? '2px solid #C62828' : `1px solid ${filled ? C.gold : C.rule}`,
-        background: badDraft ? '#FDECEA' : 'transparent',
+        border: badDraft ? '2px solid #C62828' : unusual ? '2px solid #D99A1E' : `1px solid ${filled ? C.gold : C.rule}`,
+        background: badDraft ? '#FDECEA' : unusual ? '#FFF6E0' : 'transparent',
         color: badDraft ? '#C62828' : color,
         fontWeight: filled || badDraft ? 600 : 400,
         textDecoration: badDraft ? 'line-through' : 'none',

@@ -19,6 +19,7 @@ const r3 = data.groups?.r3 || [];
 const next = {
   ...data,
   scores: {},
+  scoresAt: undefined, // the "Scores updated" stamp goes with the scores
   groups: {
     ...data.groups,
     r3: r3.map((g) => ({ ...g, playerIds: (g.playerIds || []).map(() => '') })),

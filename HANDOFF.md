@@ -355,3 +355,10 @@ Roster must stay ordered by team (3 per team) — the best-ball formulas rely on
 - Purse summary bar removed from the top of Payouts.
 - Team event + Mankles prizes are tagged `FINAL_PAY_ID` ('final'), not r3. Thu/Fri/Sat views show that day's games only; Whole Trip shows total earnings (no pay buttons).
 - New **Balance** view: Won · Paid · Left per player, sorted by most owed. Cash/Venmo there pays everything still owed across all buckets (`PAY_BUCKETS` = r1, r2, r3, final). Payments for team/Mankles live at `scores.paid.final[playerId]`.
+
+### Trip polish (Oct 30, 2026, evening)
+- Scorecard (scorekeeper only): `CardCheck` round check-in (cards complete / unfinished / not started / CTP not marked) and per-card "Double-check:" strip (`cardWarnings`: blank holes, `isUnusualScore` = ace on par 4/5 or 5+ over par). Gold box on unusual scores. Nothing blocks saving.
+- "Scores updated …" stamp (`ScoresUpdated`) on Leaderboard/Teams/Payouts/Scorecard. Saved as `data.scoresAt` beside the four state keys (only bumped when `scores` changes); falls back to the row's `updated_at`. `reset:go` clears it.
+- Nav spacing tightened at md widths (768–1023px) — the page no longer scrolls sideways there.
+- Daily Recap (`RoundRecaps`/`buildRecap`) on the Leaderboard: one collapsed card per finished round, 7 joke lines from `RECAP_LINES`, picked deterministically per round. `RECAP_PLAYER_JABS` adds a one-time jab for Nick Roy, woven into his line on the first finished round where he's highlighted (Ben's request: one word, "difficult" or "sensitive", one day only).
+- Display only: no calculation code changed; Whole Trip payouts verified identical.
