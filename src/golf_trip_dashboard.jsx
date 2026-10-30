@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, Fragment as ReactFragment } from 'react';
 const React = { Fragment: ReactFragment };
-import { Trophy, Calendar, Users, ClipboardList, Flag, ChevronLeft, ChevronRight, Shield, Sun, CloudSun, Cloud, CloudFog, CloudDrizzle, CloudRain, CloudLightning, Snowflake, Droplets, Wind } from 'lucide-react';
+import { Trophy, Calendar, Users, ClipboardList, Flag, ChevronLeft, ChevronRight, Shield, Sun, CloudSun, Cloud, CloudFog, CloudDrizzle, CloudRain, CloudLightning, Snowflake, Droplets, Wind, DollarSign, Check } from 'lucide-react';
 import logoUrl from './assets/logo.svg';
 import { supabase, TABLE, SHARED_ROW_ID } from './supabase';
 import { buildXlsx, downloadBlob } from './xlsx';
@@ -593,7 +593,7 @@ export default function GolfTripDashboard() {
         {tab === 'schedule'    && <Schedule players={players} groups={groups} setGroups={setGroups} />}
         {tab === 'roster'      && <Roster players={players} setPlayers={setPlayers} teams={teams} />}
         {tab === 'teams'       && <Teams players={players} scores={scores} teams={teams} setTeams={setTeams} groups={groups} />}
-        {tab === 'skins'       && <Skins players={players} scores={scores} groups={groups} />}
+        {tab === 'payouts'     && <Payouts players={players} scores={scores} setScores={setScores} teams={teams} groups={groups} />}
         {tab === 'courses'     && <Courses groups={groups} />}
         {tab === 'scorecard'   && <Scorecard players={players} scores={scores} setScores={setScores} teams={teams} groups={groups} />}
         </div>
@@ -1044,7 +1044,7 @@ function Nav({ tab, setTab }) {
   const PRIMARY = [
     { id: 'leaderboard', label: 'Leaderboard', short: 'Board', Icon: Trophy },
     { id: 'schedule',    label: 'Schedule',    short: 'Sched', Icon: Calendar },
-    { id: 'skins',       label: 'Skins',       short: 'Skins', Icon: Flag },
+    { id: 'payouts',     label: 'Payouts',     short: 'Payouts', Icon: DollarSign },
     { id: 'scorecard',   label: 'Scorecard',   short: 'Score', Icon: ClipboardList },
   ];
   const SECONDARY = [
@@ -1146,6 +1146,12 @@ function Leaderboard({ players, scores, teams, groups }) {
 
   const { teamTotals, mankles, roundResults } = useMemo(
     () => computeStandings(ROUNDS, teams, players, scores, courseById, groups),
+    [players, scores, teams, groups]
+  );
+
+  // Mankles prize money appears once every round is fully scored.
+  const { allDone, manklesPrize } = useMemo(
+    () => computePayouts({ players, scores, teams, groups }),
     [players, scores, teams, groups]
   );
 
@@ -1288,6 +1294,7 @@ function Leaderboard({ players, scores, teams, groups }) {
                 <th key={r.id} className="py-3 px-1 md:px-2 smallcaps text-[11px] text-right w-8 md:w-auto">R{idx + 1}</th>
               ))}
               <th className="py-3 px-1 md:px-3 smallcaps text-[11px] text-right w-12 md:w-auto" style={{ color: C.gold }}>Total</th>
+              {allDone && <th className="py-3 px-1 md:px-3 smallcaps text-[11px] text-right w-14 md:w-auto" style={{ color: C.gold }}>$</th>}
             </tr>
           </thead>
           <tbody>
@@ -1323,6 +1330,11 @@ function Leaderboard({ players, scores, teams, groups }) {
                   <td className="py-3 px-1 md:px-3 text-right font-display text-base md:text-lg font-mono" style={{ color: row.total > 0 ? C.greenDk : '#bfb89e' }}>
                     {row.total > 0 ? row.total : '—'}
                   </td>
+                  {allDone && (
+                    <td className="py-3 pl-0 pr-2 md:px-3 text-right font-mono text-[11px] md:text-sm" style={{ color: manklesPrize.has(row.player.id) ? C.greenDk : '#bfb89e' }}>
+                      {manklesPrize.has(row.player.id) ? fmtUsd(manklesPrize.get(row.player.id)) : '—'}
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -1336,6 +1348,7 @@ function Leaderboard({ players, scores, teams, groups }) {
         Mankles each round = handicap + Stableford points earned
         (Eagle 8 · Birdie 4 · Par 2 · Bogey 1 · Double 0 · Triple+ −1).
         Mankles ties go to the most birdies across all rounds.
+        Mankles pays $300 · 150 · 100 · 75 · 50 · 25 to the top six, shown here once Saturday's round is in.
       </p>
     </section>
   );
@@ -1424,6 +1437,13 @@ function RulesModal({ onClose }) {
             skin on that hole (no carry-overs). Each round's $180 pot is
             split evenly across however many skins were won — e.g. 5 skins
             on Watson = $36 per skin.
+          </Section>
+          <Section title="Payouts">
+            Each round: closest to the pin front 9 and back 9 (<b>$20</b> each),
+            most Mankles points that day (<b>$50</b>), 2nd most (<b>$30</b>), and
+            the <b>$180</b> skins pool. Team event: 1st <b>$450</b> ($150 each),
+            2nd <b>$150</b> ($50 each). Mankles: <b>$300 / 150 / 100 / 75 / 50 / 25</b>.
+            Ties split the money for the places they share. The Payouts tab adds it all up.
           </Section>
           <Section title="R3 Pairings">
             Day-3 groups auto-populate from the Mankles standings after
@@ -2716,6 +2736,124 @@ const computeSkinsForRound = (round, players, scores, course, groups) => {
 };
 
 // ============================================================
+// PAYOUTS — every prize, worked out from the scores + CTP ticks
+// ============================================================
+const CTP_PRIZE = 20;                    // per side, per round
+const DAILY_POINTS_PRIZES = [50, 30];    // most / 2nd most Mankles points that day
+const TEAM_PRIZES = [450, 150];          // split evenly across the team's players
+const MANKLES_PRIZES = [300, 150, 100, 75, 50, 25];
+const TOTAL_PURSE = ROUNDS.length * (2 * CTP_PRIZE + DAILY_POINTS_PRIZES[0] + DAILY_POINTS_PRIZES[1] + SKINS_POT_PER_ROUND)
+  + TEAM_PRIZES[0] + TEAM_PRIZES[1] + MANKLES_PRIZES.reduce((a, b) => a + b, 0);
+
+// CTP picks live inside `scores` (scores.ctp.r1 = { front, back }) rather than
+// as a new top-level key: older copies of the page re-save `scores` untouched,
+// so an out-of-date phone can't drop the ticks when it saves.
+const ctpForRound = (scores, roundId) => scores?.ctp?.[roundId] || {};
+
+// Hand out place prizes down a best-first list. Tied entries share the prizes
+// for every place they cover: two tied for 1st with [50, 30] get $40 each.
+const splitPlacePrizes = (sorted, keyOf, prizes) => {
+  const out = new Map();
+  let i = 0;
+  while (i < sorted.length && i < prizes.length) {
+    let j = i;
+    while (j + 1 < sorted.length && keyOf(sorted[j + 1]) === keyOf(sorted[i])) j++;
+    let pot = 0;
+    for (let k = i; k <= j; k++) pot += prizes[k] || 0;
+    for (let k = i; k <= j; k++) out.set(sorted[k], pot / (j - i + 1));
+    i = j + 1;
+  }
+  return out;
+};
+
+const roundComplete = (round, players, scores) => players.length > 0 && players.every((p) => {
+  const arr = scores?.[round.id]?.[p.id];
+  return Array.isArray(arr) && arr.length === 18 && arr.every(Number.isFinite);
+});
+
+// Everything the Payouts tab, the Leaderboard $ column and the export need.
+// An item only counts toward a player's total once it is final.
+const computePayouts = ({ players, scores, teams, groups }) => {
+  const courseById = (id) => COURSES.find((c) => c.id === id);
+  const byId = (id) => players.find((p) => p.id === id) || null;
+  const { teamTotals, mankles } = computeStandings(ROUNDS, teams, players, scores, courseById, groups);
+  const owed = new Map(players.map((p) => [p.id, { player: p, total: 0, items: [] }]));
+  // Each item is tagged with the round it belongs to (team + Mankles count as
+  // Saturday's), so the Payouts tab can show one day at a time.
+  const lastRoundId = ROUNDS[ROUNDS.length - 1].id;
+  const pay = (playerId, amount, label, roundId = lastRoundId) => {
+    const row = owed.get(playerId);
+    if (!row || !(amount > 0)) return;
+    row.total += amount;
+    row.items.push({ label, amount, roundId });
+  };
+
+  const rounds = ROUNDS.map((round, ri) => {
+    const course = courseById(round.courseId);
+    const tag = `R${ri + 1}`;
+    const complete = roundComplete(round, players, scores);
+
+    const pick = ctpForRound(scores, round.id);
+    const ctp = ['front', 'back'].map((side) => {
+      const winner = byId(pick[side]);
+      if (winner) pay(winner.id, CTP_PRIZE, `${tag} CTP ${side === 'front' ? 'front' : 'back'}`, round.id);
+      return { side, winner, amount: CTP_PRIZE };
+    });
+
+    // Daily points = that round's Mankles value (handicap + Stableford points).
+    const standings = players.map((p) => {
+      const sp = stablefordPoints(p, round, scores, course, groups, players);
+      const filled = sp?.filled || 0;
+      return { player: p, filled, points: filled ? Math.round(p.handicap ?? 0) + sp.points : null };
+    }).sort((a, b) => (b.points ?? -Infinity) - (a.points ?? -Infinity));
+    const done = standings.filter((s) => s.filled === 18).length;
+    const pointsPrizes = complete ? splitPlacePrizes(standings, (s) => s.points, DAILY_POINTS_PRIZES) : new Map();
+    standings.forEach((s) => {
+      s.prize = pointsPrizes.get(s) || 0;
+      if (s.prize) pay(s.player.id, s.prize, `${tag} points`, round.id);
+    });
+
+    const skins = computeSkinsForRound(round, players, scores, course, groups);
+    const skinsDone = !!skins && skins.holes.every((h) => h.status !== 'pending');
+    if (skinsDone) {
+      skins.skinsByPlayer.forEach((n, pid) => pay(pid, n * skins.payoutPerSkin, `${tag} skins ×${n}`, round.id));
+    }
+
+    return { round, course, tag, complete, done, ctp, standings, skins, skinsDone };
+  });
+
+  const allDone = rounds.every((r) => r.complete);
+
+  // Team prizes: final once every round is fully scored; projected before that.
+  const anyTeamPoints = teamTotals.some((t) => t.played.some(Boolean));
+  const teamPrizeMap = anyTeamPoints ? splitPlacePrizes(teamTotals, (t) => t.total, TEAM_PRIZES) : new Map();
+  const teamPrizes = teamTotals
+    .filter((t) => teamPrizeMap.get(t))
+    .map((t) => {
+      const members = players.filter((p) => p.team === t.team.id);
+      const amount = teamPrizeMap.get(t);
+      const each = members.length ? amount / members.length : 0;
+      if (allDone) members.forEach((p) => pay(p.id, each, 'Team event'));
+      return { team: t.team, total: t.total, members, amount, each };
+    });
+
+  // Mankles: ties on points + birdies share; final once every round is in.
+  const mankPrizeMap = allDone ? splitPlacePrizes(mankles, (m) => `${m.total}|${m.birdies}`, MANKLES_PRIZES) : new Map();
+  const manklesPrize = new Map();
+  mankles.forEach((m) => {
+    const amt = mankPrizeMap.get(m) || 0;
+    if (amt) {
+      manklesPrize.set(m.player.id, amt);
+      pay(m.player.id, amt, 'Mankles');
+    }
+  });
+
+  const people = [...owed.values()].sort((a, b) => b.total - a.total || a.player.name.localeCompare(b.player.name));
+  const paidOut = people.reduce((a, p) => a + p.total, 0);
+  return { rounds, teamPrizes, allDone, manklesPrize, people, paidOut, purse: TOTAL_PURSE };
+};
+
+// ============================================================
 // EXPORT — results workbook + raw data backup, for the year-to-year record
 // ============================================================
 const TOURNAMENT_NAME = 'DW Invitational 2026';
@@ -2858,7 +2996,34 @@ const buildResultsSheets = ({ players, scores, teams, groups }) => {
     ...players.map((p) => [p.name, teamName(p.team), hcp(p), Math.max(0, hcp(p) - low)]),
   ];
 
+  // ---- Payouts ----
+  const pay = computePayouts({ players, scores, teams, groups });
+  const payRows = [
+    title('Payouts'),
+    ['Total purse', money(pay.purse)],
+    ['Decided', money(pay.paidOut)],
+    [],
+    head(['Player', 'Owed', 'Breakdown']),
+    ...pay.people.filter((p) => p.total > 0).map((p) => [
+      p.player.name, money(p.total), p.items.map((it) => `${it.label} ${fmtUsd(it.amount)}`).join(' · '),
+    ]),
+    [],
+    head(['Round', 'Prize', 'Winner', 'Amount']),
+  ];
+  pay.rounds.forEach((d) => {
+    d.ctp.forEach((c) => payRows.push([d.tag, `${c.side === 'front' ? 'Front' : 'Back'} 9 CTP`, c.winner?.name ?? 'Not decided', c.winner ? money(c.amount) : null]));
+    d.standings.filter((x) => x.prize > 0).forEach((x) => payRows.push([d.tag, `Daily points (${x.points})`, x.player.name, money(x.prize)]));
+    if (d.skinsDone) d.skins.skinsByPlayer.forEach((n, pid) => payRows.push([
+      d.tag, `Skins ×${n}`, nameOf(pid), money(n * d.skins.payoutPerSkin),
+    ]));
+  });
+  if (pay.allDone) {
+    pay.teamPrizes.forEach((tp) => tp.members.forEach((p) => payRows.push(['Team', tp.team.name, p.name, money(tp.each)])));
+    pay.manklesPrize.forEach((amt, pid) => payRows.push(['Mankles', 'Individual', nameOf(pid), money(amt)]));
+  }
+
   return [
+    { name: 'Payouts', rows: payRows, widths: [20, 22, 22, 12] },
     { name: 'Summary', rows: summary, widths: [12, 22, 44, 12, 12, 12, 12, 12, 12, 12] },
     { name: 'Round Results', rows: roundRows, widths: [10, 22, 16, 16, 14] },
     { name: 'Hole-by-Hole', rows: holeRows, freezeRows: 1, widths: [7, 15, 14, 18, 12, 9, 9, ...Array(18).fill(4.5), 6, 6, 7, 6, 9] },
@@ -2878,30 +3043,182 @@ const exportRawBackup = ({ players, scores, teams, groups }) => {
   downloadBlob(new Blob([json], { type: 'application/json' }), `${TOURNAMENT_NAME} - Data Backup.json`);
 };
 
-function Skins({ players, scores, groups }) {
-  const [activeRound, setActiveRound] = useState(ROUNDS[0].id);
-  const round = ROUNDS.find((r) => r.id === activeRound);
-  const course = COURSES.find((c) => c.id === round.courseId);
-  const result = useMemo(
-    () => computeSkinsForRound(round, players, scores, course, groups),
-    [round, players, scores, course, groups]
-  );
+// $2,200 for whole dollars, $22.50 otherwise.
+const fmtUsd = (n) => {
+  const whole = Number.isInteger(Math.round(n * 100) / 100);
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 2 })}`;
+};
 
-  const payoutPer = result?.payoutPerSkin || 0;
-  const totals = players.map((p) => {
-    const skins = result?.skinsByPlayer.get(p.id) || 0;
-    return { player: p, skins, payout: skins * payoutPer };
-  }).sort((a, b) => b.skins - a.skins);
-  const anySkins = totals.some((t) => t.skins > 0);
-  const fmtUsd = (n) => `$${n.toFixed(2)}`;
+function Payouts({ players, scores, setScores, teams, groups }) {
+  const [activeRound, setActiveRound] = useState(ROUNDS[0].id);
+  const pay = useMemo(
+    () => computePayouts({ players, scores, teams, groups }),
+    [players, scores, teams, groups]
+  );
+  const day = pay.rounds.find((r) => r.round.id === activeRound);
+  const remaining = pay.purse - pay.paidOut;
+
+  // "Who gets paid" can show the whole trip or one day's money, for settling up each night.
+  const [view, setView] = useState('all');
+  const viewRound = ROUNDS.find((r) => r.id === view);
+  const isLast = view === ROUNDS[ROUNDS.length - 1].id;
+  const people = pay.people
+    .map((row) => {
+      const items = view === 'all' ? row.items : row.items.filter((it) => it.roundId === view);
+      return { ...row, items, total: items.reduce((a, it) => a + it.amount, 0) };
+    })
+    .sort((a, b) => b.total - a.total || a.player.name.localeCompare(b.player.name));
+  const viewTotal = people.reduce((a, p) => a + p.total, 0);
+
+  // Payments: scores.paid[roundId][playerId] = [{ method: 'cash' | 'venmo', amount }, ...].
+  // Kept inside `scores` for the same reason as CTP picks. Tapping a method pays
+  // whatever is still owed for the days in view (Whole Trip = every day), so an
+  // earlier Venmo payment stays Venmo and a score change can be topped up.
+  // When nothing is owed, tapping a method undoes the payments made that way.
+  const [unlocked, setUnlocked] = useState(() => {
+    try { return sessionStorage.getItem(SCORECARD_UNLOCK_KEY) === '1'; } catch { return false; }
+  });
+  const [pwAttempt, setPwAttempt] = useState('');
+  const [pwError, setPwError] = useState(false);
+  const tryUnlock = () => {
+    if (pwAttempt !== SCORECARD_PASSWORD) { setPwError(true); return; }
+    setUnlocked(true);
+    try { sessionStorage.setItem(SCORECARD_UNLOCK_KEY, '1'); } catch {}
+  };
+  const viewDays = view === 'all' ? ROUNDS.map((r) => r.id) : [view];
+  const cents = (n) => Math.round(n * 100) / 100;
+  const paidStatus = (row) => {
+    const days = viewDays.map((d) => {
+      const owed = cents(row.items.filter((it) => it.roundId === d).reduce((a, it) => a + it.amount, 0));
+      const payments = Array.isArray(scores?.paid?.[d]?.[row.player.id]) ? scores.paid[d][row.player.id] : [];
+      return { d, owed, payments, paid: cents(payments.reduce((a, p) => a + p.amount, 0)) };
+    }).filter((x) => x.owed > 0 || x.payments.length);
+    const paid = cents(days.reduce((a, x) => a + x.paid, 0));
+    const methods = [...new Set(days.flatMap((x) => x.payments.map((p) => p.method)))];
+    const due = days.some((x) => x.owed > x.paid);
+    return { days, paid, methods, due, settled: days.length > 0 && days.every((x) => x.owed === x.paid) };
+  };
+  const setPaid = (row, method) => {
+    if (!unlocked) return;
+    const { days, due } = paidStatus(row);
+    setScores((prev) => {
+      const paid = { ...(prev?.paid || {}) };
+      days.forEach(({ d, owed, payments, paid: already }) => {
+        const next = due
+          ? (owed > already ? [...payments, { method, amount: cents(owed - already) }] : payments)
+          : payments.filter((p) => p.method !== method);
+        const day = { ...(paid[d] || {}) };
+        if (next.length) day[row.player.id] = next; else delete day[row.player.id];
+        paid[d] = day;
+      });
+      return { ...prev, paid };
+    });
+  };
+  const paidOutView = people.reduce((a, row) => a + paidStatus(row).paid, 0);
+
+  const dayPurse = 2 * CTP_PRIZE + DAILY_POINTS_PRIZES[0] + DAILY_POINTS_PRIZES[1] + SKINS_POT_PER_ROUND
+    + (isLast ? TEAM_PRIZES[0] + TEAM_PRIZES[1] + MANKLES_PRIZES.reduce((a, b) => a + b, 0) : 0);
 
   return (
     <section className="mt-10">
-      <SectionTitle eyebrow="Side Game" title="The Skins" />
+      <SectionTitle eyebrow="Settle Up" title="The Payouts" />
+
+      {/* PURSE SUMMARY */}
+      <div className="mb-8 p-4 rounded grid grid-cols-3 gap-3" style={{ background: C.greenDk, color: C.cream }}>
+        {[
+          ['Total Purse', fmtUsd(pay.purse)],
+          ['Decided', fmtUsd(pay.paidOut)],
+          ['Still to Play', fmtUsd(remaining)],
+        ].map(([label, value]) => (
+          <div key={label} className="min-w-0">
+            <div className="smallcaps text-[10px] md:text-[11px]" style={{ color: C.gold }}>{label}</div>
+            <div className="font-display text-xl md:text-2xl">{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* WHO GETS PAID */}
+      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
+        <span className="smallcaps text-[11px]" style={{ color: C.goldDk }}>Who Gets Paid</span>
+        <div className="flex rounded overflow-hidden" role="group" aria-label="Show money for" style={{ border: `1px solid ${C.rule}` }}>
+          {[{ id: 'all', label: 'Whole Trip' }, ...ROUNDS.map((r) => ({ id: r.id, label: r.day.slice(0, 3) }))].map((opt, i) => {
+            const active = view === opt.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => setView(opt.id)}
+                aria-pressed={active}
+                className={`smallcaps text-[10px] px-3 py-1.5 ${i ? 'border-l' : ''}`}
+                style={{ borderColor: C.rule, background: active ? C.greenDk : 'white', color: active ? C.gold : C.greenDk }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="mb-3 text-xs" style={{ color: '#6b6555' }}>
+        {viewRound && <>{viewRound.day} only · {fmtUsd(viewTotal)} of {fmtUsd(dayPurse)} decided · </>}
+        Paid out {fmtUsd(paidOutView)} of {fmtUsd(viewTotal)}
+        {isLast ? ' · includes the team event and Mankles, paid at the end' : ''}
+      </div>
+      {!unlocked && (
+        <div className="mb-3 flex items-center gap-2 flex-wrap">
+          <span className="text-xs" style={{ color: '#6b6555' }}>Scorekeeper: unlock to mark who's been paid</span>
+          <input
+            type="password"
+            value={pwAttempt}
+            onChange={(e) => { setPwAttempt(e.target.value); setPwError(false); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') tryUnlock(); }}
+            placeholder="Password"
+            aria-label="Scorekeeper password"
+            className="w-32 text-xs bg-white outline-none rounded px-2 py-1.5"
+            style={{ border: `1px solid ${pwError ? '#B0413E' : C.rule}`, color: C.ink }}
+          />
+          <button onClick={tryUnlock} className="smallcaps text-[10px] px-3 py-1.5 rounded" style={{ background: C.greenDk, color: C.gold }}>
+            Unlock
+          </button>
+          {pwError && <span className="text-[11px]" style={{ color: '#B0413E' }}>Incorrect password.</span>}
+        </div>
+      )}
+      <div className="rounded mb-10" style={{ border: `1px solid ${C.rule}`, background: 'white' }}>
+        <table className="w-full text-sm tabular">
+          <thead>
+            <tr className="text-left" style={{ background: C.greenDk, color: C.cream }}>
+              <th className="py-3 px-3 smallcaps text-[11px]">Player</th>
+              <th className="py-3 px-3 smallcaps text-[11px] text-right" style={{ color: C.gold }}>Owed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {people.map((row) => {
+              const has = row.total > 0;
+              return (
+                <tr key={row.player.id} className="border-t" style={{ borderColor: C.rule }}>
+                  <td className="py-2.5 px-3">
+                    <div className="font-display text-base md:text-lg leading-tight" style={{ color: has ? C.ink : '#8e8870' }}>
+                      {row.player.name}
+                    </div>
+                    {has && (
+                      <div className="text-[11px] mt-0.5" style={{ color: '#6b6555' }}>
+                        {row.items.map((it) => `${it.label} ${fmtUsd(it.amount)}`).join(' · ')}
+                      </div>
+                    )}
+                    <PaidControls status={paidStatus(row)} total={row.total} unlocked={unlocked} onPick={(m) => setPaid(row, m)} />
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-display text-lg md:text-xl font-mono align-top" style={{ color: has ? C.greenDk : '#bfb89e' }}>
+                    {has ? fmtUsd(row.total) : '—'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
       {/* DAY SELECTOR */}
-      <div className="grid md:grid-cols-3 gap-4 mb-10">
-        {ROUNDS.map((r, i) => {
+      <div className="mb-3 smallcaps text-[11px]" style={{ color: C.goldDk }}>Daily Games</div>
+      <div className="grid grid-cols-3 gap-2 md:gap-4 mb-6">
+        {ROUNDS.map((r) => {
           const active = r.id === activeRound;
           return (
             <button
@@ -2916,12 +3233,12 @@ function Skins({ players, scores, groups }) {
               }}
             >
               <div className="absolute top-0 left-0 right-0 h-1" style={{ background: C.gold }} />
-              <div className="p-5">
-                <div className="smallcaps text-[11px] mb-1" style={{ color: active ? C.gold : C.goldDk }}>
-                  Day {i + 1} · {r.day} {r.date}
+              <div className="p-3 md:p-5">
+                <div className="smallcaps text-[10px] md:text-[11px] mb-1" style={{ color: active ? C.gold : C.goldDk }}>
+                  {r.day} {r.date}
                 </div>
-                <div className="font-display text-2xl" style={{ color: active ? C.cream : C.greenDkr }}>
-                  {r.course}
+                <div className="font-display text-lg md:text-2xl leading-tight" style={{ color: active ? C.cream : C.greenDkr }}>
+                  {r.course.split(' ').pop()}
                 </div>
               </div>
             </button>
@@ -2929,119 +3246,256 @@ function Skins({ players, scores, groups }) {
         })}
       </div>
 
-      {/* POT SUMMARY */}
-      <div className="mb-6 p-4 rounded flex items-center justify-between flex-wrap gap-3" style={{ background: C.greenDk, color: C.cream }}>
-        <div>
-          <div className="smallcaps text-[11px]" style={{ color: C.gold }}>Round Pot</div>
-          <div className="font-display text-2xl">${result?.pot ?? 0}</div>
-        </div>
-        <div>
-          <div className="smallcaps text-[11px]" style={{ color: C.gold }}>Skins Won</div>
-          <div className="font-display text-2xl">{result?.totalSkins ?? 0}</div>
-        </div>
-        <div>
-          <div className="smallcaps text-[11px]" style={{ color: C.gold }}>Payout per Skin</div>
-          <div className="font-display text-2xl">{result?.totalSkins > 0 ? fmtUsd(payoutPer) : '—'}</div>
-        </div>
-      </div>
+      <DayPayouts day={day} players={players} />
 
-      {/* STANDINGS */}
-      <div className="mb-3 smallcaps text-[11px]" style={{ color: C.goldDk }}>Skins Won</div>
-      <div className="rounded mb-8" style={{ border: `1px solid ${C.rule}`, background: 'white' }}>
-        <table className="w-full text-sm tabular">
-          <thead>
-            <tr className="text-left" style={{ background: C.greenDk, color: C.cream }}>
-              <th className="py-3 px-3 smallcaps text-[11px] w-12">Pos</th>
-              <th className="py-3 px-3 smallcaps text-[11px]">Player</th>
-              <th className="py-3 px-3 smallcaps text-[11px] text-right">Skins</th>
-              <th className="py-3 px-3 smallcaps text-[11px] text-right" style={{ color: C.gold }}>Payout</th>
-            </tr>
-          </thead>
-          <tbody>
-            {totals.map((row, i) => {
-              const leader = i === 0 && row.skins > 0;
-              return (
-                <tr key={row.player.id} className="border-t" style={{ borderColor: C.rule, background: leader ? '#FBF5DF' : 'transparent' }}>
-                  <td className="py-3 px-3 font-display text-lg" style={{ color: leader ? C.goldDk : C.ink }}>
-                    {row.skins > 0 ? i + 1 : '—'}
-                  </td>
-                  <td className="py-3 px-3 font-display text-lg">
-                    {playerLabel(row.player)}
-                    {leader && <Trophy size={14} className="inline ml-2" style={{ color: C.gold }} />}
-                  </td>
-                  <td className="py-3 px-3 text-right font-display text-xl font-mono" style={{ color: row.skins > 0 ? C.greenDk : '#bfb89e' }}>
-                    {row.skins > 0 ? row.skins : '—'}
-                  </td>
-                  <td className="py-3 px-3 text-right font-display text-xl font-mono" style={{ color: row.skins > 0 ? C.greenDk : '#bfb89e' }}>
-                    {row.skins > 0 ? fmtUsd(row.payout) : '—'}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      {/* TEAM EVENT */}
+      <div className="mt-10 mb-3 flex items-center gap-2">
+        <span className="smallcaps text-[11px]" style={{ color: C.goldDk }}>Team Event</span>
+        <StatusTag final={pay.allDone} pendingLabel="Projected" />
       </div>
-
-      {/* HOLE-BY-HOLE */}
-      <div className="mb-3 smallcaps text-[11px]" style={{ color: C.goldDk }}>Hole-by-Hole</div>
       <div className="rounded" style={{ border: `1px solid ${C.rule}`, background: 'white' }}>
-        <table className="w-full text-sm tabular">
-          <thead>
-            <tr className="text-left" style={{ background: C.greenDk, color: C.cream }}>
-              <th className="py-3 px-2 smallcaps text-[11px] w-14 text-center">Hole</th>
-              <th className="py-3 px-2 smallcaps text-[11px] w-14 text-center">Par</th>
-              <th className="py-3 px-3 smallcaps text-[11px]">Result</th>
-              <th className="py-3 px-3 smallcaps text-[11px] text-right">Net</th>
-              <th className="py-3 px-3 smallcaps text-[11px] text-right" style={{ color: C.gold }}>Skins</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result?.holes.map((h) => {
-              const par = course.holes[h.hole - 1].par;
-              let resultCell, netCell, skinsCell;
-              if (h.status === 'won') {
-                resultCell = <span className="font-display" style={{ color: C.greenDk }}>{playerLabel(h.winner)}</span>;
-                netCell = h.net;
-                skinsCell = <span className="font-mono" style={{ color: C.greenDk }}>1</span>;
-              } else if (h.status === 'tied') {
-                resultCell = (
-                  <span style={{ color: '#8e8870' }}>
-                    <span className="italic">Tie — no skin</span>
-                    <div className="text-[10px] mt-0.5">{h.tiedPlayers.map((p) => p.name).join(', ')}</div>
-                  </span>
-                );
-                netCell = h.net;
-                skinsCell = <span style={{ color: '#bfb89e' }}>—</span>;
-              } else {
-                resultCell = <span style={{ color: '#bfb89e' }} className="italic">{h.posted}/{h.total} posted</span>;
-                netCell = <span style={{ color: '#bfb89e' }}>—</span>;
-                skinsCell = <span style={{ color: '#bfb89e' }}>—</span>;
-              }
-              return (
-                <tr key={h.hole} className="border-t" style={{ borderColor: C.rule }}>
-                  <td className="py-2 px-2 font-mono text-center" style={{ color: C.greenDk }}>{h.hole}</td>
-                  <td className="py-2 px-2 font-mono text-center" style={{ color: '#6b6555' }}>{par}</td>
-                  <td className="py-2 px-3">{resultCell}</td>
-                  <td className="py-2 px-3 text-right font-mono" style={{ color: C.ink }}>{netCell}</td>
-                  <td className="py-2 px-3 text-right font-mono">{skinsCell}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        {pay.teamPrizes.length === 0 ? TEAM_PRIZES.map((amt, i) => (
+          <PrizeRow key={i} first={i === 0} label={`${i === 0 ? '1st' : '2nd'} place team`} amount={amt} who={null} />
+        )) : pay.teamPrizes.map((tp, i) => (
+          <PrizeRow
+            key={tp.team.id}
+            first={i === 0}
+            label={`${tp.team.name} · ${Math.round(tp.total * 10) / 10} pts`}
+            amount={tp.amount}
+            who={tp.members.map((p) => p.name).join(', ')}
+            note={`${fmtUsd(tp.each)} each`}
+            dim={!pay.allDone}
+          />
+        ))}
       </div>
 
-      <p className="mt-4 text-xs italic" style={{ color: '#6b6555' }}>
-        Net scoring (strokes off field low man) · Full-field pool across all {players.length} players ·
-        Ties get no skin (no carryovers) · ${result?.pot ?? SKINS_POT_PER_ROUND} pot per round is split evenly across skins won.
+      <p className="mt-6 text-xs italic" style={{ color: '#6b6555' }}>
+        Everything is worked out from the scores — the only thing to mark by hand is closest to the pin,
+        on the Scorecard. Daily points = that day's Mankles score (handicap + Stableford points); they pay out once
+        every player has finished the round. Skins pay once every hole is decided. Ties split the prize money for the
+        places they share. Team and Mankles prizes pay after Saturday's round — Mankles payouts are on the Leaderboard.
       </p>
-
-      {!anySkins && (
-        <div className="mt-6 p-4 text-sm rounded text-center" style={{ background: C.creamLt, border: `1px solid ${C.rule}` }}>
-          No skins awarded yet — holes are only decided once all {players.length} players have posted a score.
-        </div>
-      )}
     </section>
+  );
+}
+
+const PAY_METHODS = [{ id: 'cash', label: 'Cash' }, { id: 'venmo', label: 'Venmo' }];
+
+function PaidControls({ status, total, unlocked, onPick }) {
+  const { days, paid, methods, due, settled } = status;
+  if (days.length === 0) return null;
+  const diff = Math.round((total - paid) * 100) / 100;
+  const methodText = methods.map((m) => PAY_METHODS.find((x) => x.id === m)?.label).join(' + ');
+  let note = null;
+  if (settled) note = { text: `✓ Paid · ${methodText}`, color: C.greenDk };
+  else if (paid > 0) {
+    note = diff > 0
+      ? { text: `Paid ${fmtUsd(paid)} (${methodText}) · owes ${fmtUsd(diff)} more`, color: '#B0413E' }
+      : { text: `Paid ${fmtUsd(paid)} · overpaid ${fmtUsd(-diff)}`, color: '#B0413E' };
+  }
+  return (
+    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+      {unlocked && PAY_METHODS.map((m) => {
+        const active = !due && methods.includes(m.id);
+        return (
+          <button
+            key={m.id}
+            type="button"
+            aria-pressed={active}
+            title={active ? `Undo ${m.label} payment` : `Mark paid by ${m.label}`}
+            onClick={() => onPick(m.id)}
+            className="flex items-center gap-1 smallcaps text-[10px] px-2.5 py-1 rounded-full"
+            style={{ border: `1px solid ${active ? C.greenDk : C.rule}`, background: active ? C.greenDk : 'white', color: active ? C.gold : C.greenDk }}
+          >
+            {active && <Check size={11} strokeWidth={3} />}
+            {m.label}
+          </button>
+        );
+      })}
+      {note && <span className="text-[11px] font-medium" style={{ color: note.color }}>{note.text}</span>}
+    </div>
+  );
+}
+
+function StatusTag({ final, pendingLabel = 'Pending' }) {
+  return (
+    <span
+      className="smallcaps text-[9px] px-1.5 py-0.5 rounded-full"
+      style={final
+        ? { background: C.greenDk, color: C.gold }
+        : { background: C.creamLt, color: '#8e8870', border: `1px solid ${C.rule}` }}
+    >
+      {final ? 'Final' : pendingLabel}
+    </span>
+  );
+}
+
+function PrizeRow({ label, amount, who, note, first = true, dim = false }) {
+  return (
+    <div className={`px-3 md:px-4 py-3 flex items-start justify-between gap-3 ${first ? '' : 'border-t'}`} style={{ borderColor: C.rule }}>
+      <div className="min-w-0">
+        <div className="smallcaps text-[10px]" style={{ color: C.goldDk }}>{label}</div>
+        <div className="font-display text-base md:text-lg leading-tight" style={{ color: who ? (dim ? '#6b6555' : C.ink) : '#bfb89e' }}>
+          {who || 'Not decided yet'}
+        </div>
+        {note && <div className="text-[11px] mt-0.5" style={{ color: '#6b6555' }}>{note}</div>}
+      </div>
+      <div className="font-display text-lg md:text-xl font-mono shrink-0" style={{ color: who && !dim ? C.greenDk : '#bfb89e' }}>
+        {fmtUsd(amount)}
+      </div>
+    </div>
+  );
+}
+
+function DayPayouts({ day, players }) {
+  const { ctp, standings, complete, done, skins, skinsDone, course } = day;
+  const total = players.length;
+
+  // Most / 2nd most points: once final, list the paid players; before that, show who's leading.
+  // Paid players grouped by score; a tie for 1st that covers both prizes is one group.
+  const winnerGroups = [];
+  standings.filter((s) => s.prize > 0).forEach((s) => {
+    const g = winnerGroups.find((x) => x.points === s.points);
+    if (g) g.list.push(s); else winnerGroups.push({ points: s.points, list: [s] });
+  });
+  const scored = standings.filter((s) => s.points !== null);
+  const fmtWho = (list) => list.map((s) => `${s.player.name} (${s.points})`).join(', ');
+  const top = scored.length ? scored.filter((s) => s.points === scored[0].points) : [];
+  const nextPts = scored.find((s) => s.points < (scored[0]?.points ?? -Infinity))?.points;
+  const second = top.length === 1 && nextPts !== undefined ? scored.filter((s) => s.points === nextPts) : [];
+
+  const skinRows = players
+    .map((p) => ({ player: p, n: skins?.skinsByPlayer.get(p.id) || 0 }))
+    .filter((r) => r.n > 0)
+    .sort((a, b) => b.n - a.n);
+  const decidedHoles = skins ? skins.holes.filter((h) => h.status !== 'pending').length : 0;
+
+  return (
+    <div className="space-y-6">
+      {/* CTP + POINTS */}
+      <div>
+        <div className="mb-2 flex items-center gap-2">
+          <span className="smallcaps text-[11px]" style={{ color: C.goldDk }}>Closest to the Pin & Daily Points</span>
+          <StatusTag final={complete} pendingLabel={`${done}/${total} finished`} />
+        </div>
+        <div className="rounded" style={{ border: `1px solid ${C.rule}`, background: 'white' }}>
+          {ctp.map((c, i) => (
+            <PrizeRow
+              key={c.side}
+              first={i === 0}
+              label={`${c.side === 'front' ? 'Front' : 'Back'} 9 CTP`}
+              amount={c.amount}
+              who={c.winner?.name}
+              note={c.winner ? null : 'Tick the CTP box on the Scorecard'}
+            />
+          ))}
+          {complete ? (
+            winnerGroups.map((g, gi) => (
+              <PrizeRow
+                key={g.points}
+                first={false}
+                label={`${gi === 0 ? 'Most' : '2nd most'} points${g.list.length > 1 ? ' · tie' : ''}`}
+                amount={g.list.reduce((a, s) => a + s.prize, 0)}
+                who={fmtWho(g.list)}
+                note={g.list.length > 1 ? `${fmtUsd(g.list[0].prize)} each` : null}
+              />
+            ))
+          ) : (
+            <>
+              <PrizeRow first={false} label="Most points" amount={DAILY_POINTS_PRIZES[0]} dim
+                who={top.length ? `Leading: ${fmtWho(top)}` : null}
+                note={`Pays when all ${total} players finish`} />
+              <PrizeRow first={false} label="2nd most points" amount={DAILY_POINTS_PRIZES[1]} dim
+                who={second.length ? `Leading: ${fmtWho(second)}` : null} />
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* SKINS */}
+      <div>
+        <div className="mb-2 flex items-center gap-2">
+          <span className="smallcaps text-[11px]" style={{ color: C.goldDk }}>Skins · {fmtUsd(SKINS_POT_PER_ROUND)} Pool</span>
+          <StatusTag final={skinsDone} pendingLabel={`${decidedHoles}/18 holes`} />
+        </div>
+        <div className="rounded" style={{ border: `1px solid ${C.rule}`, background: 'white' }}>
+          <div className="px-3 md:px-4 py-3 flex justify-between gap-3 text-sm" style={{ color: '#6b6555' }}>
+            <span>{skins?.totalSkins || 0} skin{skins?.totalSkins === 1 ? '' : 's'} won</span>
+            <span>{skins?.totalSkins ? `${fmtUsd(skins.payoutPerSkin)} each${skinsDone ? '' : ' so far'}` : '—'}</span>
+          </div>
+          {skinRows.map((r) => (
+            <div key={r.player.id} className="px-3 md:px-4 py-2.5 border-t flex justify-between gap-3" style={{ borderColor: C.rule }}>
+              <span className="font-display text-base md:text-lg" style={{ color: skinsDone ? C.ink : '#6b6555' }}>
+                {r.player.name} <span className="font-mono text-xs" style={{ color: '#8e8870' }}>×{r.n}</span>
+              </span>
+              <span className="font-display text-lg md:text-xl font-mono" style={{ color: skinsDone ? C.greenDk : '#bfb89e' }}>
+                {fmtUsd(r.n * skins.payoutPerSkin)}
+              </span>
+            </div>
+          ))}
+          {skinsDone && skins.totalSkins === 0 && (
+            <div className="px-3 md:px-4 py-2.5 border-t text-sm italic" style={{ borderColor: C.rule, color: '#8e8870' }}>
+              Every hole tied — the {fmtUsd(SKINS_POT_PER_ROUND)} pool is unclaimed.
+            </div>
+          )}
+        </div>
+
+        <details className="mt-3">
+          <summary className="smallcaps text-[11px] cursor-pointer" style={{ color: C.goldDk }}>Skins hole by hole</summary>
+          <SkinsHoleTable skins={skins} course={course} />
+          <p className="mt-2 text-xs italic" style={{ color: '#6b6555' }}>
+            Net scoring (strokes off field low man) · Full field of {total} · A hole is decided once everyone has posted ·
+            Ties get no skin (no carryovers) · The pool splits evenly across skins won.
+          </p>
+        </details>
+      </div>
+    </div>
+  );
+}
+
+function SkinsHoleTable({ skins, course }) {
+  return (
+    <div className="mt-3 rounded" style={{ border: `1px solid ${C.rule}`, background: 'white' }}>
+      <table className="w-full text-sm tabular">
+        <thead>
+          <tr className="text-left" style={{ background: C.greenDk, color: C.cream }}>
+            <th className="py-3 px-2 smallcaps text-[11px] w-12 text-center">Hole</th>
+            <th className="py-3 px-2 smallcaps text-[11px] w-12 text-center">Par</th>
+            <th className="py-3 px-3 smallcaps text-[11px]">Result</th>
+            <th className="py-3 px-3 smallcaps text-[11px] text-right">Net</th>
+          </tr>
+        </thead>
+        <tbody>
+          {skins?.holes.map((h) => {
+            const par = course.holes[h.hole - 1].par;
+            let resultCell, netCell;
+            if (h.status === 'won') {
+              resultCell = <span className="font-display" style={{ color: C.greenDk }}>{playerLabel(h.winner)}</span>;
+              netCell = h.net;
+            } else if (h.status === 'tied') {
+              resultCell = (
+                <span style={{ color: '#8e8870' }}>
+                  <span className="italic">Tie — no skin</span>
+                  <div className="text-[10px] mt-0.5">{h.tiedPlayers.map((p) => p.name).join(', ')}</div>
+                </span>
+              );
+              netCell = h.net;
+            } else {
+              resultCell = <span style={{ color: '#bfb89e' }} className="italic">{h.posted}/{h.total} posted</span>;
+              netCell = <span style={{ color: '#bfb89e' }}>—</span>;
+            }
+            return (
+              <tr key={h.hole} className="border-t" style={{ borderColor: C.rule }}>
+                <td className="py-2 px-2 font-mono text-center" style={{ color: C.greenDk }}>{h.hole}</td>
+                <td className="py-2 px-2 font-mono text-center" style={{ color: '#6b6555' }}>{par}</td>
+                <td className="py-2 px-3">{resultCell}</td>
+                <td className="py-2 px-3 text-right font-mono" style={{ color: C.ink }}>{netCell}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -3333,6 +3787,18 @@ function Scorecard({ players, scores, setScores, teams, groups }) {
     });
   };
 
+  // One CTP winner per side per round: ticking a player moves the win to them,
+  // ticking the current winner clears it.
+  const ctp = ctpForRound(scores, activeRound);
+  const toggleCtp = (playerId, side) => {
+    if (!unlocked) return;
+    setScores((prev) => {
+      const cur = prev?.ctp?.[activeRound] || {};
+      const nextRound = { ...cur, [side]: cur[side] === playerId ? null : playerId };
+      return { ...prev, ctp: { ...(prev?.ctp || {}), [activeRound]: nextRound } };
+    });
+  };
+
   return (
     <section className="mt-10">
       <SectionTitle eyebrow="Post a Score" title="The Scorecard" />
@@ -3414,6 +3880,8 @@ function Scorecard({ players, scores, setScores, teams, groups }) {
             disabled={!unlocked}
             playerScores={scores?.[activeRound]?.[p.id] || Array(18).fill(null)}
             onSetHole={(holeIdx, value) => setHole(p.id, holeIdx, value)}
+            ctp={{ front: ctp.front === p.id, back: ctp.back === p.id }}
+            onToggleCtp={(side) => toggleCtp(p.id, side)}
           />
         ))}
       </div>
@@ -3422,6 +3890,29 @@ function Scorecard({ players, scores, setScores, teams, groups }) {
         Type a number into any hole to record a score. Totals update live and save automatically.
       </p>
     </section>
+  );
+}
+
+function CtpBox({ side, checked, disabled, onClick }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={`Closest to the pin, ${side} nine`}
+      onClick={onClick}
+      disabled={disabled}
+      className="flex items-center gap-1.5 py-1 smallcaps text-[10px] whitespace-nowrap disabled:cursor-not-allowed"
+      style={{ color: checked ? C.gold : 'rgba(245,239,224,0.7)', opacity: disabled && !checked ? 0.5 : 1 }}
+    >
+      <span
+        className="inline-flex items-center justify-center rounded-sm"
+        style={{ width: 16, height: 16, border: `1px solid ${C.gold}`, background: checked ? C.gold : 'transparent' }}
+      >
+        {checked && <Check size={12} strokeWidth={3} style={{ color: C.greenDkr }} />}
+      </span>
+      CTP {side === 'front' ? 'F9' : 'B9'}
+    </button>
   );
 }
 
@@ -3442,7 +3933,7 @@ function StrokeDots({ n }) {
   );
 }
 
-function PlayerScorecard({ player, course, teams, round, allPlayers, groups, playerScores, onSetHole, disabled }) {
+function PlayerScorecard({ player, course, teams, round, allPlayers, groups, playerScores, onSetHole, disabled, ctp, onToggleCtp }) {
   const teamName = (teams || []).find((t) => t.id === player.team)?.name || player.team;
   const isMobile = useIsMobile();
   const front = course.holes.slice(0, 9);
@@ -3463,7 +3954,7 @@ function PlayerScorecard({ player, course, teams, round, allPlayers, groups, pla
   return (
     <div className="rounded overflow-hidden" style={{ border: `1px solid ${C.rule}`, background: 'white' }}>
       {/* Player header */}
-      <div className="px-4 py-3 flex items-center justify-between" style={{ background: C.greenDk, color: C.cream }}>
+      <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-y-1" style={{ background: C.greenDk, color: C.cream }}>
         <div className="flex items-baseline gap-3 flex-wrap">
           <span className="font-display text-xl">{playerLabel(player)}</span>
           {player.team && (
@@ -3488,6 +3979,11 @@ function PlayerScorecard({ player, course, teams, round, allPlayers, groups, pla
               {formatToPar(toPar)}
             </span>
           )}
+        </div>
+        <div className="w-full flex items-center gap-4">
+          {['front', 'back'].map((side) => (
+            <CtpBox key={side} side={side} checked={!!ctp?.[side]} disabled={disabled} onClick={() => onToggleCtp(side)} />
+          ))}
         </div>
       </div>
 

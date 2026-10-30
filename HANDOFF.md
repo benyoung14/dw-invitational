@@ -329,3 +329,24 @@ Roster must stay ordered by team (3 per team) — the best-ball formulas rely on
   - *Raw Data Backup* — `DW Invitational 2026 - Data Backup.json`, the same `{updated_at, data}` shape as
     `backups/`, so `npm run restore -- <file>` can load it back.
 - For next year: change `TOURNAMENT_NAME`, `ROUND_DATES` and the dates text in `buildResultsSheets`.
+
+## Payouts tab + CTP (Oct 30, 2026)
+
+- The **Payouts** tab replaced Skins. `computePayouts()` works out every prize from the scores:
+  CTP $20 per side per round, daily Mankles points $50 / $30, the $180 skins pool,
+  team $450 / $150 (split across the team's players) and Mankles $300 / 150 / 100 / 75 / 50 / 25.
+  The total purse is $2,200. Ties split the prizes for the places they share.
+- An item only counts toward "Who gets paid" once it's final: daily points once every player has
+  finished the round, skins once all 18 holes are decided, and team + Mankles once all three rounds are in.
+- The Mankles $ column shows on the Leaderboard only after the final round.
+- "Who gets paid" has a Whole Trip / Thu / Fri / Sat toggle for settling up nightly. Team + Mankles count as Saturday's money.
+- CTP ticks are made on the Scorecard (behind the password) and are stored at `scores.ctp[roundId] = { front, back }`.
+  They live **inside scores on purpose**: older copies of the page re-save `scores` untouched, so an
+  out-of-date phone can't wipe them. The reset script's `scores: {}` clears them too.
+- Prize amounts are constants next to `computePayouts`. Change them there for next year.
+- The Excel export's first sheet is now "Payouts".
+- Paid tracking: on "Who gets paid", the scorekeeper (same password as the Scorecard) taps Cash or Venmo per player.
+  Payments are stored at `scores.paid[roundId][playerId] = [{ method, amount }]`. A tap pays whatever is still owed
+  for the days in view (Whole Trip = all days), so earlier payments keep their method and a score change shows
+  as "owes $X more" or "overpaid", which a top-up tap then settles. With nothing owed, tapping a method undoes
+  that method's payments.
