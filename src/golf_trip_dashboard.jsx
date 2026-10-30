@@ -3056,7 +3056,6 @@ function Payouts({ players, scores, setScores, teams, groups }) {
     [players, scores, teams, groups]
   );
   const day = pay.rounds.find((r) => r.round.id === activeRound);
-  const remaining = pay.purse - pay.paidOut;
 
   // "Who gets paid" can show the whole trip or one day's money, for settling up each night.
   const [view, setView] = useState('all');
@@ -3122,20 +3121,6 @@ function Payouts({ players, scores, setScores, teams, groups }) {
   return (
     <section className="mt-10">
       <SectionTitle eyebrow="Settle Up" title="The Payouts" />
-
-      {/* PURSE SUMMARY */}
-      <div className="mb-8 p-4 rounded grid grid-cols-3 gap-3" style={{ background: C.greenDk, color: C.cream }}>
-        {[
-          ['Total Purse', fmtUsd(pay.purse)],
-          ['Decided', fmtUsd(pay.paidOut)],
-          ['Still to Play', fmtUsd(remaining)],
-        ].map(([label, value]) => (
-          <div key={label} className="min-w-0">
-            <div className="smallcaps text-[10px] md:text-[11px]" style={{ color: C.gold }}>{label}</div>
-            <div className="font-display text-xl md:text-2xl">{value}</div>
-          </div>
-        ))}
-      </div>
 
       {/* WHO GETS PAID */}
       <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
