@@ -2748,6 +2748,10 @@ const TOTAL_PURSE = ROUNDS.length * (2 * CTP_PRIZE + DAILY_POINTS_PRIZES[0] + DA
 // CTP picks live inside `scores` (scores.ctp.r1 = { front, back }) rather than
 // as a new top-level key: older copies of the page re-save `scores` untouched,
 // so an out-of-date phone can't drop the ticks when it saves.
+// Payment buckets: one per round, plus one for the team event + Mankles.
+const FINAL_PAY_ID = 'final';
+const PAY_BUCKETS = [...ROUNDS.map((r) => r.id), FINAL_PAY_ID];
+
 const ctpForRound = (scores, roundId) => scores?.ctp?.[roundId] || {};
 
 // Hand out place prizes down a best-first list. Tied entries share the prizes
@@ -2778,10 +2782,10 @@ const computePayouts = ({ players, scores, teams, groups }) => {
   const byId = (id) => players.find((p) => p.id === id) || null;
   const { teamTotals, mankles } = computeStandings(ROUNDS, teams, players, scores, courseById, groups);
   const owed = new Map(players.map((p) => [p.id, { player: p, total: 0, items: [] }]));
-  // Each item is tagged with the round it belongs to (team + Mankles count as
-  // Saturday's), so the Payouts tab can show one day at a time.
-  const lastRoundId = ROUNDS[ROUNDS.length - 1].id;
-  const pay = (playerId, amount, label, roundId = lastRoundId) => {
+  // Each item is tagged with the round it belongs to, so the Payouts tab can
+  // show one day at a time. Team + Mankles money is tagged FINAL_PAY_ID: it is
+  // won over the whole trip, so it shows under Whole Trip, not Saturday.
+  const pay = (playerId, amount, label, roundId = FINAL_PAY_ID) => {
     const row = owed.get(playerId);
     if (!row || !(amount > 0)) return;
     row.total += amount;
@@ -3057,21 +3061,16 @@ function Payouts({ players, scores, setScores, teams, groups }) {
   );
   const day = pay.rounds.find((r) => r.round.id === activeRound);
 
-  // "Who gets paid" can show the whole trip or one day's money, for settling up each night.
+  // "Who gets paid" shows what each player won over the whole trip or on one day
+  // (that day's games only), or the Balance: won vs paid, and what is still owed.
   const [view, setView] = useState('all');
   const viewRound = ROUNDS.find((r) => r.id === view);
   const isLast = view === ROUNDS[ROUNDS.length - 1].id;
-  const people = pay.people
-    .map((row) => {
-      const items = view === 'all' ? row.items : row.items.filter((it) => it.roundId === view);
-      return { ...row, items, total: items.reduce((a, it) => a + it.amount, 0) };
-    })
-    .sort((a, b) => b.total - a.total || a.player.name.localeCompare(b.player.name));
-  const viewTotal = people.reduce((a, p) => a + p.total, 0);
+  const isBalance = view === 'balance';
 
   // Payments: scores.paid[roundId][playerId] = [{ method: 'cash' | 'venmo', amount }, ...].
   // Kept inside `scores` for the same reason as CTP picks. Tapping a method pays
-  // whatever is still owed for the days in view (Whole Trip = every day), so an
+  // whatever is still owed for the day in view (Balance = every day + team/Mankles), so an
   // earlier Venmo payment stays Venmo and a score change can be topped up.
   // When nothing is owed, tapping a method undoes the payments made that way.
   const [unlocked, setUnlocked] = useState(() => {
@@ -3084,7 +3083,7 @@ function Payouts({ players, scores, setScores, teams, groups }) {
     setUnlocked(true);
     try { sessionStorage.setItem(SCORECARD_UNLOCK_KEY, '1'); } catch {}
   };
-  const viewDays = view === 'all' ? ROUNDS.map((r) => r.id) : [view];
+  const viewDays = viewRound ? [view] : PAY_BUCKETS;
   const cents = (n) => Math.round(n * 100) / 100;
   const paidStatus = (row) => {
     const days = viewDays.map((d) => {
@@ -3113,10 +3112,19 @@ function Payouts({ players, scores, setScores, teams, groups }) {
       return { ...prev, paid };
     });
   };
-  const paidOutView = people.reduce((a, row) => a + paidStatus(row).paid, 0);
+  const people = pay.people
+    .map((row) => {
+      const items = viewRound ? row.items.filter((it) => it.roundId === view) : row.items;
+      const total = cents(items.reduce((a, it) => a + it.amount, 0));
+      const view_ = { ...row, items, total };
+      const status = paidStatus(view_);
+      return { ...view_, status, left: cents(total - status.paid) };
+    })
+    .sort((a, b) => (isBalance ? b.left - a.left : 0) || b.total - a.total || a.player.name.localeCompare(b.player.name));
+  const viewTotal = cents(people.reduce((a, p) => a + p.total, 0));
+  const paidOutView = cents(people.reduce((a, row) => a + row.status.paid, 0));
 
-  const dayPurse = 2 * CTP_PRIZE + DAILY_POINTS_PRIZES[0] + DAILY_POINTS_PRIZES[1] + SKINS_POT_PER_ROUND
-    + (isLast ? TEAM_PRIZES[0] + TEAM_PRIZES[1] + MANKLES_PRIZES.reduce((a, b) => a + b, 0) : 0);
+  const dayPurse = 2 * CTP_PRIZE + DAILY_POINTS_PRIZES[0] + DAILY_POINTS_PRIZES[1] + SKINS_POT_PER_ROUND;
 
   return (
     <section className="mt-10">
@@ -3126,14 +3134,14 @@ function Payouts({ players, scores, setScores, teams, groups }) {
       <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
         <span className="smallcaps text-[11px]" style={{ color: C.goldDk }}>Who Gets Paid</span>
         <div className="flex rounded overflow-hidden" role="group" aria-label="Show money for" style={{ border: `1px solid ${C.rule}` }}>
-          {[{ id: 'all', label: 'Whole Trip' }, ...ROUNDS.map((r) => ({ id: r.id, label: r.day.slice(0, 3) }))].map((opt, i) => {
+          {[{ id: 'all', label: 'Whole Trip' }, ...ROUNDS.map((r) => ({ id: r.id, label: r.day.slice(0, 3) })), { id: 'balance', label: 'Balance' }].map((opt, i) => {
             const active = view === opt.id;
             return (
               <button
                 key={opt.id}
                 onClick={() => setView(opt.id)}
                 aria-pressed={active}
-                className={`smallcaps text-[10px] px-3 py-1.5 ${i ? 'border-l' : ''}`}
+                className={`smallcaps text-[10px] px-2.5 md:px-3 py-1.5 ${i ? 'border-l' : ''}`}
                 style={{ borderColor: C.rule, background: active ? C.greenDk : 'white', color: active ? C.gold : C.greenDk }}
               >
                 {opt.label}
@@ -3143,11 +3151,12 @@ function Payouts({ players, scores, setScores, teams, groups }) {
         </div>
       </div>
       <div className="mb-3 text-xs" style={{ color: '#6b6555' }}>
-        {viewRound && <>{viewRound.day} only · {fmtUsd(viewTotal)} of {fmtUsd(dayPurse)} decided · </>}
-        Paid out {fmtUsd(paidOutView)} of {fmtUsd(viewTotal)}
-        {isLast ? ' · includes the team event and Mankles, paid at the end' : ''}
+        {viewRound && <>{viewRound.day}'s games · {fmtUsd(viewTotal)} of {fmtUsd(dayPurse)} decided · Paid out {fmtUsd(paidOutView)}</>}
+        {isLast && ' · Team event and Mankles are under Whole Trip'}
+        {view === 'all' && <>Total winnings · {fmtUsd(viewTotal)} of {fmtUsd(pay.purse)} decided</>}
+        {isBalance && <>Won {fmtUsd(viewTotal)} · Paid {fmtUsd(paidOutView)} · Still owed {fmtUsd(cents(viewTotal - paidOutView))}</>}
       </div>
-      {!unlocked && (
+      {!unlocked && view !== 'all' && (
         <div className="mb-3 flex items-center gap-2 flex-wrap">
           <span className="text-xs" style={{ color: '#6b6555' }}>Scorekeeper: unlock to mark who's been paid</span>
           <input
@@ -3171,7 +3180,7 @@ function Payouts({ players, scores, setScores, teams, groups }) {
           <thead>
             <tr className="text-left" style={{ background: C.greenDk, color: C.cream }}>
               <th className="py-3 px-3 smallcaps text-[11px]">Player</th>
-              <th className="py-3 px-3 smallcaps text-[11px] text-right" style={{ color: C.gold }}>Owed</th>
+              <th className="py-3 px-3 smallcaps text-[11px] text-right" style={{ color: C.gold }}>{isBalance ? 'Left' : 'Won'}</th>
             </tr>
           </thead>
           <tbody>
@@ -3183,15 +3192,24 @@ function Payouts({ players, scores, setScores, teams, groups }) {
                     <div className="font-display text-base md:text-lg leading-tight" style={{ color: has ? C.ink : '#8e8870' }}>
                       {row.player.name}
                     </div>
-                    {has && (
+                    {has && !isBalance && (
                       <div className="text-[11px] mt-0.5" style={{ color: '#6b6555' }}>
                         {row.items.map((it) => `${it.label} ${fmtUsd(it.amount)}`).join(' · ')}
                       </div>
                     )}
-                    <PaidControls status={paidStatus(row)} total={row.total} unlocked={unlocked} onPick={(m) => setPaid(row, m)} />
+                    {isBalance && (has || row.status.paid > 0) && (
+                      <div className="text-[11px] mt-0.5" style={{ color: '#6b6555' }}>
+                        Won {fmtUsd(row.total)} · Paid {fmtUsd(row.status.paid)}
+                      </div>
+                    )}
+                    {view !== 'all' && (
+                      <PaidControls status={row.status} total={row.total} unlocked={unlocked} balance={isBalance} onPick={(m) => setPaid(row, m)} />
+                    )}
                   </td>
-                  <td className="py-2.5 px-3 text-right font-display text-lg md:text-xl font-mono align-top" style={{ color: has ? C.greenDk : '#bfb89e' }}>
-                    {has ? fmtUsd(row.total) : '—'}
+                  <td className="py-2.5 px-3 text-right font-display text-lg md:text-xl font-mono align-top" style={{ color: (isBalance ? row.left > 0 : has) ? C.greenDk : '#bfb89e' }}>
+                    {isBalance
+                      ? (row.left > 0 ? fmtUsd(row.left) : row.left < 0 ? `−${fmtUsd(-row.left)}` : '—')
+                      : (has ? fmtUsd(row.total) : '—')}
                   </td>
                 </tr>
               );
@@ -3266,7 +3284,7 @@ function Payouts({ players, scores, setScores, teams, groups }) {
 
 const PAY_METHODS = [{ id: 'cash', label: 'Cash' }, { id: 'venmo', label: 'Venmo' }];
 
-function PaidControls({ status, total, unlocked, onPick }) {
+function PaidControls({ status, total, unlocked, balance = false, onPick }) {
   const { days, paid, methods, due, settled } = status;
   if (days.length === 0) return null;
   const diff = Math.round((total - paid) * 100) / 100;
@@ -3274,7 +3292,10 @@ function PaidControls({ status, total, unlocked, onPick }) {
   let note = null;
   if (settled) note = { text: `✓ Paid · ${methodText}`, color: C.greenDk };
   else if (paid > 0) {
-    note = diff > 0
+    // On Balance, part-paid is normal (e.g. Thursday paid, Friday not yet), so it isn't flagged red.
+    note = diff > 0 && balance
+      ? { text: `Paid so far · ${methodText}`, color: '#6b6555' }
+      : diff > 0
       ? { text: `Paid ${fmtUsd(paid)} (${methodText}) · owes ${fmtUsd(diff)} more`, color: '#B0413E' }
       : { text: `Paid ${fmtUsd(paid)} · overpaid ${fmtUsd(-diff)}`, color: '#B0413E' };
   }
