@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, Fragment as ReactFragment } from 'react';
 const React = { Fragment: ReactFragment };
-import { Trophy, Calendar, Users, ClipboardList, Flag, ChevronLeft, ChevronRight, Shield, Sun, CloudSun, Cloud, CloudFog, CloudDrizzle, CloudRain, CloudLightning, Snowflake, Droplets, Wind, Download } from 'lucide-react';
+import { Trophy, Calendar, Users, ClipboardList, Flag, ChevronLeft, ChevronRight, Shield, Sun, CloudSun, Cloud, CloudFog, CloudDrizzle, CloudRain, CloudLightning, Snowflake, Droplets, Wind } from 'lucide-react';
 import logoUrl from './assets/logo.svg';
 import { supabase, TABLE, SHARED_ROW_ID } from './supabase';
 import { buildXlsx, downloadBlob } from './xlsx';
@@ -599,7 +599,7 @@ export default function GolfTripDashboard() {
         </div>
       </main>
 
-      <Footer />
+      <Footer state={{ players, scores, teams, groups }} />
     </div>
   );
 }
@@ -1143,7 +1143,6 @@ function Leaderboard({ players, scores, teams, groups }) {
   const courseById = (id) => COURSES.find((c) => c.id === id);
   const [showRules, setShowRules] = useState(false);
   const [shareStatus, setShareStatus] = useState('');
-  const [showExport, setShowExport] = useState(false);
 
   const { teamTotals, mankles, roundResults } = useMemo(
     () => computeStandings(ROUNDS, teams, players, scores, courseById, groups),
@@ -1214,45 +1213,10 @@ function Leaderboard({ players, scores, teams, groups }) {
         >
           How Scoring Works
         </button>
-        <button
-          onClick={() => setShowExport((v) => !v)}
-          aria-expanded={showExport}
-          className="smallcaps text-[11px] px-3 py-2 rounded flex items-center gap-1.5"
-          style={{ background: 'white', color: C.greenDk, border: `1px solid ${C.rule}` }}
-        >
-          <Download size={13} aria-hidden="true" />
-          Export Results
-        </button>
         {shareStatus && (
           <span className="text-[11px] italic" style={{ color: C.goldDk }}>{shareStatus}</span>
         )}
       </div>
-
-      {showExport && (
-        <div className="mb-6 p-4 rounded flex flex-col md:flex-row md:items-center gap-3 md:gap-5" style={{ background: C.creamLt, border: `1px solid ${C.rule}` }}>
-          <div className="text-sm flex-1" style={{ color: C.ink }}>
-            Save everything for the record books: standings, Mankles, skins, every hole score and the pairings.
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            <button
-              onClick={() => exportResultsWorkbook({ players, scores, teams, groups })}
-              className="smallcaps text-[11px] px-3 py-2 rounded flex items-center gap-1.5"
-              style={{ background: C.greenDk, color: C.gold, border: `1px solid ${C.greenDk}` }}
-            >
-              <Download size={13} aria-hidden="true" />
-              Excel Spreadsheet
-            </button>
-            <button
-              onClick={() => exportRawBackup({ players, scores, teams, groups })}
-              className="smallcaps text-[11px] px-3 py-2 rounded flex items-center gap-1.5"
-              style={{ background: 'white', color: C.greenDk, border: `1px solid ${C.rule}` }}
-            >
-              <Download size={13} aria-hidden="true" />
-              Raw Data Backup
-            </button>
-          </div>
-        </div>
-      )}
 
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
 
@@ -3752,7 +3716,8 @@ function SectionTitle({ eyebrow, title }) {
   );
 }
 
-function Footer() {
+function Footer({ state }) {
+  const link = 'smallcaps text-[10px] underline underline-offset-2 hover:opacity-100';
   return (
     <footer
       className="relative mt-16 py-10 text-center border-t overflow-hidden"
@@ -3763,6 +3728,12 @@ function Footer() {
         <img src={logoUrl} alt="DW Invitational" className="h-10 opacity-90" style={{ filter: 'brightness(0) invert(1)' }} />
         <div className="smallcaps text-[10px]" style={{ color: C.gold }}>
           A Tradition Unlike Any Other · Reunion Resort · November 2026
+        </div>
+        <div className="flex items-center gap-2 mt-2 text-[10px]" style={{ color: C.gold, opacity: 0.6 }}>
+          <span className="smallcaps">Export results:</span>
+          <button onClick={() => exportResultsWorkbook(state)} className={link} style={{ color: C.gold }}>Excel</button>
+          <span aria-hidden="true">·</span>
+          <button onClick={() => exportRawBackup(state)} className={link} style={{ color: C.gold }}>Raw data</button>
         </div>
       </div>
     </footer>

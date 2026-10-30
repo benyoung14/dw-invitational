@@ -322,7 +322,7 @@ Roster must stay ordered by team (3 per team) — the best-ball formulas rely on
 
 - **Weather strip** under the header: Open-Meteo (free, no key) for Reunion, refreshed on load and every 30 min,
   cached in localStorage for when signal drops. Below 40% rain, storm/rain labels read "Chance of …".
-- **Export Results** button on the Leaderboard opens two downloads:
+- **Export results** is a small link in the footer (every tab), with two downloads:
   - *Excel Spreadsheet* — `DW Invitational 2026 - Results.xlsx` with Summary (teams, Mankles, skins $),
     Round Results, Hole-by-Hole, Skins by Hole, Pairings, Players. Built in-browser by `src/xlsx.js`
     (no dependency). Verified against an independent Python recompute of the old test scores and opened in Excel.
