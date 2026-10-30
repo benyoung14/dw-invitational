@@ -317,3 +317,15 @@ all skins payouts matched the dashboard. Rebuild with
 `python3 scripts/build-backup-xlsx.py backups/<file>.json out.xlsx` (add `--with-scores` to load
 that backup's scores), then open and save once in Excel so the values are calculated.
 Roster must stay ordered by team (3 per team) — the best-ball formulas rely on it.
+
+## Weather strip + results export (Oct 29–30, 2026)
+
+- **Weather strip** under the header: Open-Meteo (free, no key) for Reunion, refreshed on load and every 30 min,
+  cached in localStorage for when signal drops. Below 40% rain, storm/rain labels read "Chance of …".
+- **Export Results** button on the Leaderboard opens two downloads:
+  - *Excel Spreadsheet* — `DW Invitational 2026 - Results.xlsx` with Summary (teams, Mankles, skins $),
+    Round Results, Hole-by-Hole, Skins by Hole, Pairings, Players. Built in-browser by `src/xlsx.js`
+    (no dependency). Verified against an independent Python recompute of the old test scores and opened in Excel.
+  - *Raw Data Backup* — `DW Invitational 2026 - Data Backup.json`, the same `{updated_at, data}` shape as
+    `backups/`, so `npm run restore -- <file>` can load it back.
+- For next year: change `TOURNAMENT_NAME`, `ROUND_DATES` and the dates text in `buildResultsSheets`.

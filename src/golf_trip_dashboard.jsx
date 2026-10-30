@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useRef, Fragment as ReactFragment } from 'react';
 const React = { Fragment: ReactFragment };
-import { Trophy, Calendar, Users, ClipboardList, Flag, ChevronLeft, ChevronRight, Shield, Sun, CloudSun, Cloud, CloudFog, CloudDrizzle, CloudRain, CloudLightning, Snowflake, Droplets, Wind } from 'lucide-react';
+import { Trophy, Calendar, Users, ClipboardList, Flag, ChevronLeft, ChevronRight, Shield, Sun, CloudSun, Cloud, CloudFog, CloudDrizzle, CloudRain, CloudLightning, Snowflake, Droplets, Wind, Download } from 'lucide-react';
 import logoUrl from './assets/logo.svg';
 import { supabase, TABLE, SHARED_ROW_ID } from './supabase';
+import { buildXlsx, downloadBlob } from './xlsx';
 
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(
@@ -1142,6 +1143,7 @@ function Leaderboard({ players, scores, teams, groups }) {
   const courseById = (id) => COURSES.find((c) => c.id === id);
   const [showRules, setShowRules] = useState(false);
   const [shareStatus, setShareStatus] = useState('');
+  const [showExport, setShowExport] = useState(false);
 
   const { teamTotals, mankles, roundResults } = useMemo(
     () => computeStandings(ROUNDS, teams, players, scores, courseById, groups),
@@ -1212,10 +1214,45 @@ function Leaderboard({ players, scores, teams, groups }) {
         >
           How Scoring Works
         </button>
+        <button
+          onClick={() => setShowExport((v) => !v)}
+          aria-expanded={showExport}
+          className="smallcaps text-[11px] px-3 py-2 rounded flex items-center gap-1.5"
+          style={{ background: 'white', color: C.greenDk, border: `1px solid ${C.rule}` }}
+        >
+          <Download size={13} aria-hidden="true" />
+          Export Results
+        </button>
         {shareStatus && (
           <span className="text-[11px] italic" style={{ color: C.goldDk }}>{shareStatus}</span>
         )}
       </div>
+
+      {showExport && (
+        <div className="mb-6 p-4 rounded flex flex-col md:flex-row md:items-center gap-3 md:gap-5" style={{ background: C.creamLt, border: `1px solid ${C.rule}` }}>
+          <div className="text-sm flex-1" style={{ color: C.ink }}>
+            Save everything for the record books: standings, Mankles, skins, every hole score and the pairings.
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => exportResultsWorkbook({ players, scores, teams, groups })}
+              className="smallcaps text-[11px] px-3 py-2 rounded flex items-center gap-1.5"
+              style={{ background: C.greenDk, color: C.gold, border: `1px solid ${C.greenDk}` }}
+            >
+              <Download size={13} aria-hidden="true" />
+              Excel Spreadsheet
+            </button>
+            <button
+              onClick={() => exportRawBackup({ players, scores, teams, groups })}
+              className="smallcaps text-[11px] px-3 py-2 rounded flex items-center gap-1.5"
+              style={{ background: 'white', color: C.greenDk, border: `1px solid ${C.rule}` }}
+            >
+              <Download size={13} aria-hidden="true" />
+              Raw Data Backup
+            </button>
+          </div>
+        </div>
+      )}
 
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
 
@@ -2712,6 +2749,169 @@ const computeSkinsForRound = (round, players, scores, course, groups) => {
 
   const payoutPerSkin = totalSkins > 0 ? SKINS_POT_PER_ROUND / totalSkins : 0;
   return { holes, skinsByPlayer, totalSkins, payoutPerSkin, pot: SKINS_POT_PER_ROUND };
+};
+
+// ============================================================
+// EXPORT — results workbook + raw data backup, for the year-to-year record
+// ============================================================
+const TOURNAMENT_NAME = 'DW Invitational 2026';
+
+// Places with ties sharing a spot: [50, 48, 48, 40] → [1, 2, 2, 4].
+const tiedPlaces = (keys) => keys.map((k) => keys.indexOf(k) + 1);
+
+const buildResultsSheets = ({ players, scores, teams, groups }) => {
+  const courseById = (id) => COURSES.find((c) => c.id === id);
+  const teamName = (id) => teams.find((t) => t.id === id)?.name || '';
+  const hcp = (p) => Math.round(p.handicap ?? 0);
+  const pts = (n) => Math.round(n * 100) / 100;
+  const sum = (a) => a.reduce((x, y) => x + y, 0);
+  const head = (labels) => labels.map((v) => ({ v, s: 'head' }));
+  const title = (v) => [{ v, s: 'title' }];
+  const bold = (v) => ({ v, s: 'bold' });
+  const money = (v) => ({ v, s: 'money' });
+  const roundHead = ROUNDS.map((r, i) => `R${i + 1} ${r.course.split(' ').pop()}`);
+
+  const { teamTotals, mankles, roundResults } = computeStandings(ROUNDS, teams, players, scores, courseById, groups);
+  const skins = ROUNDS.map((r) => computeSkinsForRound(r, players, scores, courseById(r.courseId), groups));
+
+  // ---- Summary ----
+  const teamPlace = tiedPlaces(teamTotals.map((t) => t.total));
+  const mankPlace = tiedPlaces(mankles.map((m) => `${m.total}|${m.birdies}`));
+  const skinRows = players.map((p) => {
+    const per = skins.map((s) => {
+      const n = s?.skinsByPlayer.get(p.id) || 0;
+      return { n, usd: n * (s?.payoutPerSkin || 0) };
+    });
+    return { p, per, n: sum(per.map((x) => x.n)), usd: sum(per.map((x) => x.usd)) };
+  }).sort((a, b) => b.usd - a.usd || a.p.name.localeCompare(b.p.name));
+
+  const summary = [
+    title(`${TOURNAMENT_NAME} — Results`),
+    ['Reunion Resort & Golf Club · November 4–8, 2026'],
+    ['Exported', new Date().toLocaleString()],
+    [],
+    title('Team Standings'),
+    head(['Place', 'Team', 'Players', ...roundHead, 'Total']),
+    ...teamTotals.map((t, i) => [
+      t.played.some(Boolean) ? teamPlace[i] : null,
+      t.team.name,
+      players.filter((p) => p.team === t.team.id).map((p) => p.name).join(', '),
+      ...t.perRound.map((v, k) => (t.played[k] ? pts(v) : null)),
+      pts(t.total),
+    ]),
+    [],
+    title('Mankles'),
+    head(['Place', 'Player', 'Team', 'Handicap', ...roundHead, 'Total', 'Birdies or better']),
+    ...mankles.map((m, i) => [
+      m.filled ? mankPlace[i] : null, m.player.name, teamName(m.player.team), hcp(m.player),
+      ...m.perRound.map((r) => (r.played ? r.roundValue : null)), m.total, m.birdies,
+    ]),
+    [],
+    title('Skins Winnings'),
+    head(['Player', ...ROUNDS.flatMap((_, i) => [`R${i + 1} skins`, `R${i + 1} $`]), 'Total skins', 'Total $']),
+    ...skinRows.map((r) => [r.p.name, ...r.per.flatMap((x) => [x.n, money(x.usd)]), r.n, money(r.usd)]),
+  ];
+
+  // ---- Round Results ----
+  const roundRows = [];
+  roundResults.forEach((rr, i) => {
+    const r = rr.round;
+    const fmt = r.format === 'netstroke' ? 'Singles net stroke' : 'Two best nets';
+    roundRows.push(title(`Round ${i + 1} · ${r.course} · ${r.day} ${r.date} · ${fmt}`));
+    if (r.format === 'bestball2net') {
+      roundRows.push(head(['Place', 'Team', 'Best-ball net', 'Holes complete', 'Points']));
+      const done = rr.sorted.map((x) => x.total);
+      [...rr.results]
+        .sort((a, b) => b.complete - a.complete || a.total - b.total)
+        .forEach((res) => roundRows.push([
+          res.complete ? done.indexOf(res.total) + 1 : null,
+          res.team.name,
+          res.filled ? res.total : null,
+          res.filled,
+          rr.pointsByTeam.has(res.team.id) ? pts(rr.pointsByTeam.get(res.team.id)) : null,
+        ]));
+    } else {
+      roundRows.push(head(['Place', 'Player', 'Team', 'Net', 'Points to team']));
+      const nets = rr.sorted.map((x) => x.net);
+      rr.sorted.forEach((res) => roundRows.push([
+        nets.indexOf(res.net) + 1, res.p.name, teamName(res.p.team), res.net, pts(rr.pointsByPlayer.get(res.p.id)),
+      ]));
+    }
+    roundRows.push([]);
+  });
+
+  // ---- Hole-by-hole scores ----
+  const holeRows = [head([
+    'Round', 'Course', 'Date', 'Player', 'Team', 'Handicap', 'Strokes received',
+    ...Array.from({ length: 18 }, (_, i) => `${i + 1}`), 'Out', 'In', 'Gross', 'Net', 'Mankles',
+  ])];
+  ROUNDS.forEach((r, i) => {
+    const course = courseById(r.courseId);
+    const par = course.holes.map((h) => h.par);
+    holeRows.push([
+      bold(`R${i + 1}`), bold(r.course), bold(`${r.day} ${r.date}`), bold('PAR'), null, null, null,
+      ...par.map(bold), bold(sum(par.slice(0, 9))), bold(sum(par.slice(9))), bold(sum(par)),
+    ]);
+    players.forEach((p) => {
+      const posted = scores?.[r.id]?.[p.id];
+      if (!posted || !posted.some(Number.isFinite)) return;
+      const g = course.holes.map((_, k) => (Number.isFinite(posted[k]) ? posted[k] : null));
+      const part = (a) => (a.every(Number.isFinite) ? sum(a) : null);
+      const complete = g.every(Number.isFinite);
+      const nets = netHoleScores(p, r, scores, course, groups, players);
+      const sp = stablefordPoints(p, r, scores, course, groups, players);
+      holeRows.push([
+        `R${i + 1}`, r.course, `${r.day} ${r.date}`, p.name, teamName(p.team), hcp(p),
+        sum(strokesForRound(p, r, groups, players, course)),
+        ...g, part(g.slice(0, 9)), part(g.slice(9)), complete ? sum(g) : null,
+        complete ? sum(nets) : null, sp ? hcp(p) + sp.points : null,
+      ]);
+    });
+  });
+
+  // ---- Skins, hole by hole ----
+  const skinHoleRows = [head(['Round', 'Hole', 'Par', 'Result', 'Winner / tied players', 'Low net', 'Payout'])];
+  ROUNDS.forEach((r, i) => {
+    const course = courseById(r.courseId);
+    skins[i]?.holes.forEach((h) => skinHoleRows.push([
+      `R${i + 1} ${r.course}`, h.hole, course.holes[h.hole - 1].par,
+      h.status === 'won' ? 'Skin' : h.status === 'tied' ? 'Tied, no skin' : 'Not all scores in',
+      h.status === 'won' ? h.winner.name : h.status === 'tied' ? h.tiedPlayers.map((p) => p.name).join(', ') : null,
+      h.net ?? null,
+      h.status === 'won' ? money(skins[i].payoutPerSkin) : null,
+    ]));
+  });
+
+  // ---- Pairings + roster ----
+  const nameOf = (id) => players.find((p) => p.id === id)?.name;
+  const pairRows = [head(['Round', 'Course', 'Group', 'Tee time', 'Players'])];
+  ROUNDS.forEach((r, i) => (groups?.[r.id] || []).forEach((g) => pairRows.push([
+    `R${i + 1}`, r.course, g.name, g.teeTime, (g.playerIds || []).map(nameOf).filter(Boolean).join(', '),
+  ])));
+  const low = Math.min(...players.map(hcp));
+  const playerRows = [
+    head(['Player', 'Team', 'Handicap', 'Strokes off low man']),
+    ...players.map((p) => [p.name, teamName(p.team), hcp(p), Math.max(0, hcp(p) - low)]),
+  ];
+
+  return [
+    { name: 'Summary', rows: summary, widths: [12, 22, 44, 12, 12, 12, 12, 12, 12, 12] },
+    { name: 'Round Results', rows: roundRows, widths: [10, 22, 16, 16, 14] },
+    { name: 'Hole-by-Hole', rows: holeRows, freezeRows: 1, widths: [7, 15, 14, 18, 12, 9, 9, ...Array(18).fill(4.5), 6, 6, 7, 6, 9] },
+    { name: 'Skins by Hole', rows: skinHoleRows, freezeRows: 1, widths: [20, 6, 5, 18, 36, 8, 10] },
+    { name: 'Pairings', rows: pairRows, freezeRows: 1, widths: [7, 16, 10, 10, 60] },
+    { name: 'Players', rows: playerRows, freezeRows: 1, widths: [20, 14, 10, 18] },
+  ];
+};
+
+const exportResultsWorkbook = (state) =>
+  downloadBlob(buildXlsx(buildResultsSheets(state)), `${TOURNAMENT_NAME} - Results.xlsx`);
+
+// Same shape as the backups in backups/, so `npm run restore` can load it back.
+const exportRawBackup = ({ players, scores, teams, groups }) => {
+  const now = new Date().toISOString();
+  const json = JSON.stringify({ exported_at: now, updated_at: now, data: { players, scores, teams, groups } }, null, 2);
+  downloadBlob(new Blob([json], { type: 'application/json' }), `${TOURNAMENT_NAME} - Data Backup.json`);
 };
 
 function Skins({ players, scores, groups }) {
