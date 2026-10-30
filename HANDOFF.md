@@ -350,3 +350,8 @@ Roster must stay ordered by team (3 per team) — the best-ball formulas rely on
   for the days in view (Whole Trip = all days), so earlier payments keep their method and a score change shows
   as "owes $X more" or "overpaid", which a top-up tap then settles. With nothing owed, tapping a method undoes
   that method's payments.
+
+### Payouts update (Oct 30, 2026, later)
+- Purse summary bar removed from the top of Payouts.
+- Team event + Mankles prizes are tagged `FINAL_PAY_ID` ('final'), not r3. Thu/Fri/Sat views show that day's games only; Whole Trip shows total earnings (no pay buttons).
+- New **Balance** view: Won · Paid · Left per player, sorted by most owed. Cash/Venmo there pays everything still owed across all buckets (`PAY_BUCKETS` = r1, r2, r3, final). Payments for team/Mankles live at `scores.paid.final[playerId]`.
