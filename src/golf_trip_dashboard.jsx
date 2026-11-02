@@ -961,9 +961,13 @@ function MankTicker({ players, scores, teams, groups, onClick }) {
 const WEATHER_URL =
   'https://api.open-meteo.com/v1/forecast?latitude=28.2636&longitude=-81.5884' +
   '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max' +
+  '&hourly=weather_code,temperature_2m,precipitation_probability,wind_speed_10m' +
   '&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FNew_York&past_days=7&forecast_days=16';
 const WEATHER_CACHE_KEY = 'dw-weather-v1';
 const ROUND_DATES = { r1: '2026-11-05', r2: '2026-11-06', r3: '2026-11-07' };
+// Hour-by-hour window shown when a day is tapped: 10 AM through 5 PM.
+const WX_HOURS = [10, 11, 12, 13, 14, 15, 16, 17];
+const hourLabel = (h) => `${h % 12 || 12}${h < 12 ? 'a' : 'p'}`;
 
 // The weather code is the worst hour of the day, so a lone possible storm labels the whole
 // day. Below 40% rain, say "Chance of …" instead so the label matches the rain number.
@@ -982,6 +986,7 @@ const weatherLook = (code, rain) => {
 };
 
 function WeatherStrip() {
+  const [open, setOpen] = useState(null);
   const [wx, setWx] = useState(() => {
     try { return JSON.parse(localStorage.getItem(WEATHER_CACHE_KEY)) || null; } catch { return null; }
   });
@@ -992,7 +997,8 @@ function WeatherStrip() {
       try {
         const res = await fetch(WEATHER_URL);
         if (!res.ok) return;
-        const d = (await res.json()).daily;
+        const json = await res.json();
+        const d = json.daily;
         const days = {};
         d.time.forEach((t, i) => {
           days[t] = {
@@ -1002,6 +1008,22 @@ function WeatherStrip() {
             rain: d.precipitation_probability_max[i],
             wind: d.wind_speed_10m_max[i],
           };
+        });
+        // Keep only the 10–5 hours on round days, so the cache stays small.
+        const h = json.hourly;
+        const roundDates = Object.values(ROUND_DATES);
+        h?.time?.forEach((t, i) => {
+          const [date, clock] = t.split('T');
+          const hour = Number(clock.slice(0, 2));
+          if (!days[date] || !roundDates.includes(date) || !WX_HOURS.includes(hour)) return;
+          if (!Number.isFinite(h.temperature_2m[i])) return;
+          (days[date].hours ||= []).push({
+            hour,
+            code: h.weather_code[i],
+            temp: h.temperature_2m[i],
+            rain: h.precipitation_probability[i],
+            wind: h.wind_speed_10m[i],
+          });
         });
         const next = { days, fetchedAt: Date.now() };
         if (cancelled) return;
@@ -1032,14 +1054,31 @@ function WeatherStrip() {
             const look = ok ? weatherLook(day.code, day.rain) : null;
             const Icon = look?.Icon;
             const wet = ok && day.rain >= 40;
+            const hasHours = ok && day.hours?.length > 0;
+            const isOpen = hasHours && open === r.id;
             return (
-              <div
+              <button
                 key={r.id}
-                className="rounded-md px-2 py-2 md:px-4 md:py-3 min-w-0 flex flex-col gap-1.5"
-                style={{ background: '#fff', border: `1px solid ${C.rule}` }}
+                type="button"
+                disabled={!hasHours}
+                onClick={() => setOpen(isOpen ? null : r.id)}
+                aria-expanded={hasHours ? isOpen : undefined}
+                aria-controls={hasHours ? 'wx-hourly' : undefined}
+                className="rounded-md px-2 py-2 md:px-4 md:py-3 min-w-0 flex flex-col gap-1.5 text-left disabled:cursor-default"
+                style={{ background: '#fff', border: `1px solid ${isOpen ? C.green : C.rule}`, boxShadow: isOpen ? `inset 0 0 0 1px ${C.green}` : 'none' }}
               >
-                <div className="min-w-0">
-                  <div className="smallcaps text-[10px] md:text-xs" style={{ color: C.goldDk }}>{r.day.slice(0, 3)} · {r.date}</div>
+                <div className="min-w-0 w-full">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="smallcaps text-[10px] md:text-xs" style={{ color: C.goldDk }}>{r.day.slice(0, 3)} · {r.date}</span>
+                    {hasHours && (
+                      <ChevronDown
+                        size={14}
+                        className="shrink-0 transition-transform"
+                        style={{ color: C.goldDk, transform: isOpen ? 'rotate(180deg)' : 'none' }}
+                        aria-hidden="true"
+                      />
+                    )}
+                  </div>
                   <div className="font-display text-sm md:text-lg leading-tight" style={{ color: C.greenDk }}>{r.course.split(' ').pop()}</div>
                 </div>
                 {ok ? (
@@ -1069,10 +1108,44 @@ function WeatherStrip() {
                     {wx ? 'Forecast not out yet' : 'Loading forecast…'}
                   </div>
                 )}
-              </div>
+              </button>
             );
           })}
         </div>
+        {(() => {
+          const r = ROUNDS.find((x) => x.id === open);
+          const hours = r && wx?.days?.[ROUND_DATES[r.id]]?.hours;
+          if (!hours?.length) return null;
+          return (
+            <div id="wx-hourly" className="mt-2 rounded-md px-2 py-2 md:px-4 md:py-3" style={{ background: '#fff', border: `1px solid ${C.rule}` }}>
+              <div className="smallcaps text-[10px] md:text-xs mb-2 px-1" style={{ color: C.goldDk }}>
+                {r.day} at {r.course.split(' ').pop()} · hour by hour
+              </div>
+              <div className="grid grid-cols-4 sm:grid-cols-8 gap-x-1 gap-y-3">
+                {hours.map((h) => {
+                  const look = weatherLook(h.code, h.rain);
+                  const HIcon = look.Icon;
+                  const hWet = (h.rain ?? 0) >= 40;
+                  return (
+                    <div key={h.hour} className="flex flex-col items-center gap-0.5 min-w-0" title={look.label}>
+                      <span className="font-mono text-[11px] md:text-xs" style={{ color: C.ink, opacity: 0.7 }}>{hourLabel(h.hour)}</span>
+                      <HIcon className="w-[18px] h-[18px] md:w-6 md:h-6" strokeWidth={1.6} style={{ color: hWet ? C.green : C.goldDk }} aria-hidden="true" />
+                      <span className="font-mono text-[13px] md:text-base" style={{ color: C.ink }}>{Math.round(h.temp)}°</span>
+                      <span className="inline-flex items-center gap-0.5 text-[10px] md:text-xs" style={{ color: C.ink }}>
+                        <Droplets size={11} className="shrink-0" aria-hidden="true" style={{ color: C.green }} />
+                        <span className="font-mono" style={{ fontWeight: hWet ? 700 : 400 }}>{Math.round(h.rain ?? 0)}%</span>
+                      </span>
+                      <span className="inline-flex items-center gap-0.5 text-[10px] md:text-xs" style={{ color: C.ink, opacity: 0.8 }}>
+                        <Wind size={11} className="shrink-0" aria-hidden="true" style={{ color: C.goldDk }} />
+                        <span className="font-mono">{Math.round(h.wind)}<span className="text-[9px] md:text-[10px]"> mph</span></span>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </section>
   );
