@@ -362,3 +362,9 @@ Roster must stay ordered by team (3 per team) — the best-ball formulas rely on
 - Nav spacing tightened at md widths (768–1023px) — the page no longer scrolls sideways there.
 - Daily Recap (`RoundRecaps`/`buildRecap`) on the Leaderboard: one collapsed card per finished round, 7 joke lines from `RECAP_LINES`, picked deterministically per round. `RECAP_PLAYER_JABS` adds a one-time jab for Nick Roy, woven into his line on the first finished round where he's highlighted (Ben's request: one word, "difficult" or "sensitive", one day only).
 - Display only: no calculation code changed; Whole Trip payouts verified identical.
+
+## Weather dropdown (Nov 2, 2026)
+
+- `WeatherStrip` is collapsed by default behind a "Round-day forecast · Show weather" bar; it slides open/closed (grid-rows 0fr→1fr, `inert` while closed).
+- Tapping a day tile opens a compact hour-by-hour row, 10a–5p (`WX_HOURS`): icon, temp, rain chance with a drop icon. Hourly data comes from the same Open-Meteo call (`&hourly=…`), trimmed to round days and cached in `dw-weather-v1`.
+- This deploy used the last Netlify credits for the cycle. The "Powered by Netlify" badge is injected by Netlify on Free plans (can't be turned off without paying); the GitHub Pages copy has no badge.
