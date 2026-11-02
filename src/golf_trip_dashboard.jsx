@@ -1150,7 +1150,10 @@ function WeatherStrip() {
                       <span className="font-mono text-[9px] md:text-[11px]" style={{ color: C.ink, opacity: 0.6 }}>{hourLabel(h.hour)}</span>
                       <HIcon className="w-[14px] h-[14px] md:w-[18px] md:h-[18px] my-0.5" strokeWidth={1.6} style={{ color: hWet ? C.green : C.goldDk }} aria-hidden="true" />
                       <span className="font-mono text-[11px] md:text-sm" style={{ color: C.ink }}>{Math.round(h.temp)}°</span>
-                      <span className="font-mono text-[9px] md:text-[11px]" style={{ color: C.green, fontWeight: hWet ? 700 : 400 }}>{Math.round(h.rain ?? 0)}%</span>
+                      <span className="inline-flex items-center gap-px text-[9px] md:text-[11px]" style={{ color: C.green }} aria-label={`${Math.round(h.rain ?? 0)}% chance of rain`}>
+                        <Droplets className="w-[9px] h-[9px] md:w-[11px] md:h-[11px] shrink-0" aria-hidden="true" />
+                        <span className="font-mono" style={{ fontWeight: hWet ? 700 : 400 }}>{Math.round(h.rain ?? 0)}%</span>
+                      </span>
                     </div>
                   );
                 })}
