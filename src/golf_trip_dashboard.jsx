@@ -986,6 +986,7 @@ const weatherLook = (code, rain) => {
 };
 
 function WeatherStrip() {
+  const [shown, setShown] = useState(false);
   const [open, setOpen] = useState(null);
   const [wx, setWx] = useState(() => {
     try { return JSON.parse(localStorage.getItem(WEATHER_CACHE_KEY)) || null; } catch { return null; }
@@ -1042,11 +1043,32 @@ function WeatherStrip() {
 
   return (
     <section className="w-full" style={{ background: C.creamLt, borderBottom: `1px solid ${C.rule}` }} aria-label="Round-day weather">
-      <div className="max-w-[1500px] mx-auto px-3 md:px-6 py-3">
-        <div className="flex items-baseline justify-between mb-2 px-1">
+      <div className="max-w-[1500px] mx-auto px-3 md:px-6">
+        <button
+          type="button"
+          onClick={() => setShown((v) => !v)}
+          aria-expanded={shown}
+          aria-controls="wx-body"
+          className="w-full flex items-center justify-between gap-2 px-1 py-2.5 text-left"
+        >
           <span className="smallcaps text-[10px] md:text-xs" style={{ color: C.goldDk }}>Round-day forecast · Reunion, FL</span>
-          {updated && <span className="text-[10px] md:text-xs" style={{ color: C.goldDk, opacity: 0.8 }}>Updated {updated}</span>}
-        </div>
+          <span className="inline-flex items-center gap-1.5 text-[10px] md:text-xs" style={{ color: C.goldDk }}>
+            {shown ? 'Hide' : 'Show weather'}
+            <ChevronDown size={14} className="transition-transform duration-300" style={{ transform: shown ? 'rotate(180deg)' : 'none' }} aria-hidden="true" />
+          </span>
+        </button>
+        {/* Slides open/closed: grid rows animate from 0fr to 1fr. */}
+        <div
+          id="wx-body"
+          className="grid transition-[grid-template-rows] duration-300 ease-out"
+          style={{ gridTemplateRows: shown ? '1fr' : '0fr' }}
+          inert={!shown}
+        >
+        <div className="overflow-hidden min-h-0">
+        <div className="pb-3">
+        {updated && (
+          <div className="text-right text-[10px] md:text-xs mb-1.5 px-1" style={{ color: C.goldDk, opacity: 0.8 }}>Updated {updated}</div>
+        )}
         <div className="grid grid-cols-3 gap-2 md:gap-4">
           {ROUNDS.map((r) => {
             const day = wx?.days?.[ROUND_DATES[r.id]];
@@ -1117,28 +1139,18 @@ function WeatherStrip() {
           const hours = r && wx?.days?.[ROUND_DATES[r.id]]?.hours;
           if (!hours?.length) return null;
           return (
-            <div id="wx-hourly" className="mt-2 rounded-md px-2 py-2 md:px-4 md:py-3" style={{ background: '#fff', border: `1px solid ${C.rule}` }}>
-              <div className="smallcaps text-[10px] md:text-xs mb-2 px-1" style={{ color: C.goldDk }}>
-                {r.day} at {r.course.split(' ').pop()} · hour by hour
-              </div>
-              <div className="grid grid-cols-4 sm:grid-cols-8 gap-x-1 gap-y-3">
+            <div id="wx-hourly" className="mt-2 rounded-md px-1 py-1.5 md:px-3 md:py-2" style={{ background: '#fff', border: `1px solid ${C.rule}` }}>
+              <div className="grid grid-cols-8 gap-x-0.5">
                 {hours.map((h) => {
                   const look = weatherLook(h.code, h.rain);
                   const HIcon = look.Icon;
                   const hWet = (h.rain ?? 0) >= 40;
                   return (
-                    <div key={h.hour} className="flex flex-col items-center gap-0.5 min-w-0" title={look.label}>
-                      <span className="font-mono text-[11px] md:text-xs" style={{ color: C.ink, opacity: 0.7 }}>{hourLabel(h.hour)}</span>
-                      <HIcon className="w-[18px] h-[18px] md:w-6 md:h-6" strokeWidth={1.6} style={{ color: hWet ? C.green : C.goldDk }} aria-hidden="true" />
-                      <span className="font-mono text-[13px] md:text-base" style={{ color: C.ink }}>{Math.round(h.temp)}°</span>
-                      <span className="inline-flex items-center gap-0.5 text-[10px] md:text-xs" style={{ color: C.ink }}>
-                        <Droplets size={11} className="shrink-0" aria-hidden="true" style={{ color: C.green }} />
-                        <span className="font-mono" style={{ fontWeight: hWet ? 700 : 400 }}>{Math.round(h.rain ?? 0)}%</span>
-                      </span>
-                      <span className="inline-flex items-center gap-0.5 text-[10px] md:text-xs" style={{ color: C.ink, opacity: 0.8 }}>
-                        <Wind size={11} className="shrink-0" aria-hidden="true" style={{ color: C.goldDk }} />
-                        <span className="font-mono">{Math.round(h.wind)}<span className="text-[9px] md:text-[10px]"> mph</span></span>
-                      </span>
+                    <div key={h.hour} className="flex flex-col items-center min-w-0 leading-tight" title={`${look.label} · wind ${Math.round(h.wind)} mph`}>
+                      <span className="font-mono text-[9px] md:text-[11px]" style={{ color: C.ink, opacity: 0.6 }}>{hourLabel(h.hour)}</span>
+                      <HIcon className="w-[14px] h-[14px] md:w-[18px] md:h-[18px] my-0.5" strokeWidth={1.6} style={{ color: hWet ? C.green : C.goldDk }} aria-hidden="true" />
+                      <span className="font-mono text-[11px] md:text-sm" style={{ color: C.ink }}>{Math.round(h.temp)}°</span>
+                      <span className="font-mono text-[9px] md:text-[11px]" style={{ color: C.green, fontWeight: hWet ? 700 : 400 }}>{Math.round(h.rain ?? 0)}%</span>
                     </div>
                   );
                 })}
@@ -1146,6 +1158,9 @@ function WeatherStrip() {
             </div>
           );
         })()}
+        </div>
+        </div>
+        </div>
       </div>
     </section>
   );
