@@ -968,6 +968,14 @@ const ROUND_DATES = { r1: '2026-11-05', r2: '2026-11-06', r3: '2026-11-07' };
 // Hour-by-hour window shown when a day is tapped: 10 AM through 5 PM.
 const WX_HOURS = [10, 11, 12, 13, 14, 15, 16, 17];
 const hourLabel = (h) => `${h % 12 || 12}${h < 12 ? 'a' : 'p'}`;
+// Day the hourly row starts on: Friday shows Palmer, Saturday (and after) Nicklaus, otherwise Thursday.
+const todaysWeatherRound = () => {
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  if (today >= ROUND_DATES.r3) return 'r3';
+  if (today >= ROUND_DATES.r2) return 'r2';
+  return 'r1';
+};
 
 // The weather code is the worst hour of the day, so a lone possible storm labels the whole
 // day. Below 40% rain, say "Chance of …" instead so the label matches the rain number.
@@ -987,7 +995,7 @@ const weatherLook = (code, rain) => {
 
 function WeatherStrip() {
   const [shown, setShown] = useState(false);
-  const [open, setOpen] = useState(null);
+  const [open, setOpen] = useState(todaysWeatherRound);
   const [wx, setWx] = useState(() => {
     try { return JSON.parse(localStorage.getItem(WEATHER_CACHE_KEY)) || null; } catch { return null; }
   });
@@ -1046,7 +1054,10 @@ function WeatherStrip() {
       <div className="max-w-[1500px] mx-auto px-3 md:px-6">
         <button
           type="button"
-          onClick={() => setShown((v) => !v)}
+          onClick={() => {
+            if (!shown) setOpen(todaysWeatherRound());
+            setShown(!shown);
+          }}
           aria-expanded={shown}
           aria-controls="wx-body"
           className="w-full flex items-center justify-between gap-2 px-1 py-2.5 text-left"
@@ -1083,24 +1094,14 @@ function WeatherStrip() {
                 key={r.id}
                 type="button"
                 disabled={!hasHours}
-                onClick={() => setOpen(isOpen ? null : r.id)}
-                aria-expanded={hasHours ? isOpen : undefined}
+                onClick={() => setOpen(r.id)}
+                aria-pressed={hasHours ? isOpen : undefined}
                 aria-controls={hasHours ? 'wx-hourly' : undefined}
                 className="rounded-md px-2 py-2 md:px-4 md:py-3 min-w-0 flex flex-col gap-1.5 text-left disabled:cursor-default"
                 style={{ background: '#fff', border: `1px solid ${isOpen ? C.green : C.rule}`, boxShadow: isOpen ? `inset 0 0 0 1px ${C.green}` : 'none' }}
               >
                 <div className="min-w-0 w-full">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="smallcaps text-[10px] md:text-xs" style={{ color: C.goldDk }}>{r.day.slice(0, 3)} · {r.date}</span>
-                    {hasHours && (
-                      <ChevronDown
-                        size={14}
-                        className="shrink-0 transition-transform"
-                        style={{ color: C.goldDk, transform: isOpen ? 'rotate(180deg)' : 'none' }}
-                        aria-hidden="true"
-                      />
-                    )}
-                  </div>
+                  <div className="smallcaps text-[10px] md:text-xs" style={{ color: C.goldDk }}>{r.day.slice(0, 3)} · {r.date}</div>
                   <div className="font-display text-sm md:text-lg leading-tight" style={{ color: C.greenDk }}>{r.course.split(' ').pop()}</div>
                 </div>
                 {ok ? (
