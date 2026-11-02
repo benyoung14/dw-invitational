@@ -962,6 +962,7 @@ const WEATHER_URL =
   'https://api.open-meteo.com/v1/forecast?latitude=28.2636&longitude=-81.5884' +
   '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max' +
   '&hourly=weather_code,temperature_2m,precipitation_probability,wind_speed_10m' +
+  '&current=weather_code,temperature_2m' +
   '&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FNew_York&past_days=7&forecast_days=16';
 const WEATHER_CACHE_KEY = 'dw-weather-v1';
 const ROUND_DATES = { r1: '2026-11-05', r2: '2026-11-06', r3: '2026-11-07' };
@@ -996,6 +997,7 @@ const weatherLook = (code, rain) => {
 function WeatherStrip() {
   const [shown, setShown] = useState(false);
   const [open, setOpen] = useState(todaysWeatherRound);
+  const [now, setNow] = useState(null);
   const [wx, setWx] = useState(() => {
     try { return JSON.parse(localStorage.getItem(WEATHER_CACHE_KEY)) || null; } catch { return null; }
   });
@@ -1034,9 +1036,12 @@ function WeatherStrip() {
             wind: h.wind_speed_10m[i],
           });
         });
+        const cur = json.current;
         const next = { days, fetchedAt: Date.now() };
         if (cancelled) return;
         setWx(next);
+        // Current conditions come only from a live fetch, never the cache, so they're never stale.
+        setNow(cur && Number.isFinite(cur.temperature_2m) ? { code: cur.weather_code, temp: cur.temperature_2m } : null);
         try { localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify(next)); } catch { /* storage full or blocked */ }
       } catch { /* offline — keep the cached forecast */ }
     };
@@ -1045,6 +1050,9 @@ function WeatherStrip() {
     return () => { cancelled = true; clearInterval(id); };
   }, []);
 
+  // Rain chance 100 so the label says what's happening now ("Rain", not "Chance of rain").
+  const nowLook = now ? weatherLook(now.code, 100) : null;
+  const NowIcon = nowLook?.Icon;
   const updated = wx?.fetchedAt
     ? new Date(wx.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     : null;
@@ -1060,11 +1068,25 @@ function WeatherStrip() {
           }}
           aria-expanded={shown}
           aria-controls="wx-body"
-          className="w-full flex items-center justify-between gap-2 px-1 py-2.5 text-left"
+          className="w-full grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-1 py-2 text-left"
         >
-          <span className="smallcaps text-[10px] md:text-xs" style={{ color: C.goldDk }}>Round-day forecast · Reunion, FL</span>
-          <span className="inline-flex items-center gap-1.5 text-[10px] md:text-xs" style={{ color: C.goldDk }}>
-            {shown ? 'Hide' : 'Show weather'}
+          <span className="smallcaps text-[10px] md:text-xs min-w-0" style={{ color: C.goldDk }}>
+            <span className="md:hidden">Reunion, FL</span>
+            <span className="hidden md:inline">Round-day forecast · Reunion, FL</span>
+          </span>
+          {nowLook ? (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 whitespace-nowrap"
+              style={{ background: '#fff', border: `1px solid ${C.green}` }}
+            >
+              <span className="smallcaps text-[9px] md:text-[11px]" style={{ color: C.green }}>Now</span>
+              <NowIcon className="w-4 h-4 md:w-5 md:h-5 shrink-0" strokeWidth={1.8} style={{ color: C.goldDk }} aria-hidden="true" />
+              <span className="font-mono text-sm md:text-base font-bold" style={{ color: C.ink }}>{Math.round(now.temp)}°</span>
+              <span className="hidden min-[400px]:inline text-[11px] md:text-sm" style={{ color: C.ink, opacity: 0.7 }}>{nowLook.label}</span>
+            </span>
+          ) : <span />}
+          <span className="inline-flex items-center justify-self-end gap-1.5 text-[10px] md:text-xs smallcaps" style={{ color: C.goldDk }}>
+            {shown ? 'Hide' : 'Forecast'}
             <ChevronDown size={14} className="transition-transform duration-300" style={{ transform: shown ? 'rotate(180deg)' : 'none' }} aria-hidden="true" />
           </span>
         </button>
