@@ -2706,7 +2706,12 @@ function Teams({ players, scores, teams, setTeams, groups }) {
     [players, scores, teams, groups]
   );
 
+  // Renaming needs the scorekeeper unlock (same password as the Scorecard, kept for this tab).
+  const [canRename] = useState(() => {
+    try { return sessionStorage.getItem(SCORECARD_UNLOCK_KEY) === '1'; } catch { return false; }
+  });
   const updateName = (id, name) => {
+    if (!canRename) return;
     setTeams((prev) => prev.map((t) => (t.id === id ? { ...t, name } : t)));
   };
 
@@ -2730,7 +2735,7 @@ function Teams({ players, scores, teams, setTeams, groups }) {
               perRoundPlayed={row.played}
               total={row.total}
               fmtPts={fmtPts}
-              onRename={(name) => updateName(row.team.id, name)}
+              onRename={canRename ? (name) => updateName(row.team.id, name) : null}
             />
           );
         })}
@@ -2757,12 +2762,17 @@ function TeamCard({ rank, team, members, roundResults, perRoundPoints, perRoundP
               {rank}
             </span>
           )}
-          <input
-            value={team.name}
-            onChange={(e) => onRename(e.target.value)}
-            className="font-display text-2xl flex-1 min-w-0 bg-transparent outline-none"
-            style={{ color: C.cream, borderBottom: `1px dashed rgba(201,169,97,0.4)` }}
-          />
+          {onRename ? (
+            <input
+              value={team.name}
+              onChange={(e) => onRename(e.target.value)}
+              aria-label="Team name"
+              className="font-display text-2xl flex-1 min-w-0 bg-transparent outline-none"
+              style={{ color: C.cream, borderBottom: `1px dashed rgba(201,169,97,0.4)` }}
+            />
+          ) : (
+            <span className="font-display text-2xl flex-1 min-w-0 truncate" style={{ color: C.cream }}>{team.name}</span>
+          )}
           {rank === 1 && hasAny && <Trophy size={16} style={{ color: C.gold }} />}
         </div>
         <div className="text-right ml-3">
