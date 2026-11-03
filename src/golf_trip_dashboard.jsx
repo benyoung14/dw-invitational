@@ -620,6 +620,95 @@ export default function GolfTripDashboard() {
       </main>
 
       <Footer state={{ players, scores, teams, groups }} />
+      <CountdownSplash />
+    </div>
+  );
+}
+
+// ============================================================
+// COUNTDOWN SPLASH — shown once per tab until the trip kicks off
+// ============================================================
+const KICKOFF_AT = new Date('2026-11-04T12:00:00-05:00').getTime(); // noon Wed Nov 4, Eastern
+const SPLASH_SEEN_KEY = 'dw-countdown-seen';
+
+function CountdownSplash() {
+  const [now, setNow] = useState(() => Date.now());
+  const [open, setOpen] = useState(() => {
+    if (Date.now() >= KICKOFF_AT) return false;
+    try { return sessionStorage.getItem(SPLASH_SEEN_KEY) !== '1'; } catch { return true; }
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      clearInterval(t);
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  const enter = () => {
+    try { sessionStorage.setItem(SPLASH_SEEN_KEY, '1'); } catch { /* private mode */ }
+    setOpen(false);
+  };
+
+  const left = Math.max(0, KICKOFF_AT - now);
+  const units = [
+    ['days', Math.floor(left / 86400000)],
+    ['hours', Math.floor(left / 3600000) % 24],
+    ['minutes', Math.floor(left / 60000) % 60],
+    ['seconds', Math.floor(left / 1000) % 60],
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      style={{ background: 'rgba(3,30,20,0.72)', backdropFilter: 'blur(3px)' }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="countdown-title"
+    >
+      <div
+        className="relative w-full max-w-md rounded-lg overflow-hidden text-center"
+        style={{ background: C.greenDk, color: C.cream, border: `1px solid ${C.gold}`, boxShadow: '0 20px 60px rgba(0,0,0,0.45)' }}
+      >
+        <div
+          className="absolute inset-0"
+          style={{ backgroundImage: `url(${HERO_IMG})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.25 }}
+          aria-hidden="true"
+        />
+        <div className="relative px-6 pt-8 pb-7">
+          <div className="flex justify-center mb-3"><GoldSeal size={56} /></div>
+          <div className="smallcaps text-xs mb-2" style={{ color: C.gold }}>Reunion Resort · November 4–8</div>
+          <h2 id="countdown-title" className="font-display text-3xl sm:text-4xl leading-tight mb-1">DW Invitational 2026</h2>
+          <div className="font-display italic text-xl mb-6" style={{ color: C.cream }}>
+            {left > 0 ? 'The trip kicks off in' : "It's tournament time"}
+          </div>
+          <div className="grid grid-cols-4 gap-2 mb-7" aria-live="off">
+            {units.map(([label, v]) => (
+              <div key={label} className="rounded py-3" style={{ background: 'rgba(3,30,20,0.65)', border: `1px solid ${C.goldDk}` }}>
+                <div className="font-display text-4xl tabular leading-none" style={{ color: C.gold }}>
+                  {String(v).padStart(2, '0')}
+                </div>
+                <div className="text-[10px] uppercase tracking-wider mt-1.5" style={{ color: C.cream }}>{label}</div>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={enter}
+            autoFocus
+            className="font-display text-2xl px-10 py-2.5 rounded transition-transform hover:scale-[1.03] active:scale-[0.98]"
+            style={{ background: C.gold, color: C.greenDkr }}
+          >
+            Let's go
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
