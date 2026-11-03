@@ -626,21 +626,21 @@ export default function GolfTripDashboard() {
 }
 
 // ============================================================
-// COUNTDOWN SPLASH — shown once per tab until the trip kicks off
+// COUNTDOWN SPLASH — shown on every page load until the trip kicks off
 // ============================================================
 const KICKOFF_AT = new Date('2026-11-04T12:00:00-05:00').getTime(); // noon Wed Nov 4, Eastern
-const SPLASH_SEEN_KEY = 'dw-countdown-seen';
 
 function CountdownSplash() {
   const [now, setNow] = useState(() => Date.now());
-  const [open, setOpen] = useState(() => {
-    if (Date.now() >= KICKOFF_AT) return false;
-    try { return sessionStorage.getItem(SPLASH_SEEN_KEY) !== '1'; } catch { return true; }
-  });
+  const [open, setOpen] = useState(() => Date.now() < KICKOFF_AT);
 
   useEffect(() => {
     if (!open) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
+    const t = setInterval(() => {
+      const t2 = Date.now();
+      setNow(t2);
+      if (t2 >= KICKOFF_AT) setOpen(false); // noon hits: the countdown goes away on its own
+    }, 1000);
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
@@ -651,10 +651,7 @@ function CountdownSplash() {
 
   if (!open) return null;
 
-  const enter = () => {
-    try { sessionStorage.setItem(SPLASH_SEEN_KEY, '1'); } catch { /* private mode */ }
-    setOpen(false);
-  };
+  const enter = () => setOpen(false);
 
   const left = Math.max(0, KICKOFF_AT - now);
   const units = [
@@ -686,7 +683,7 @@ function CountdownSplash() {
           <div className="smallcaps text-xs mb-2" style={{ color: C.gold }}>Reunion Resort · November 4–8</div>
           <h2 id="countdown-title" className="font-display text-3xl sm:text-4xl leading-tight mb-1">DW Invitational 2026</h2>
           <div className="font-display italic text-xl mb-6" style={{ color: C.cream }}>
-            {left > 0 ? 'The trip kicks off in' : "It's tournament time"}
+            The trip kicks off in
           </div>
           <div className="grid grid-cols-4 gap-2 mb-7" aria-live="off">
             {units.map(([label, v]) => (
