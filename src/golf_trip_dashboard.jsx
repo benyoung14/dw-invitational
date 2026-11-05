@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useRef, Fragment as ReactFragment } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, Fragment as ReactFragment } from 'react';
 const React = { Fragment: ReactFragment };
-import { Trophy, Calendar, Users, ClipboardList, Flag, ChevronLeft, ChevronRight, Shield, Sun, CloudSun, Cloud, CloudFog, CloudDrizzle, CloudRain, CloudLightning, Snowflake, Droplets, Wind, DollarSign, Check, ChevronDown } from 'lucide-react';
+import { Trophy, Calendar, Users, ClipboardList, Flag, ChevronLeft, ChevronRight, Shield, Sun, CloudSun, Cloud, CloudFog, CloudDrizzle, CloudRain, CloudLightning, Snowflake, Droplets, Wind, DollarSign, Check, ChevronDown, Tv, X, Maximize2, Minimize2 } from 'lucide-react';
 import logoUrl from './assets/logo.svg';
 import { supabase, TABLE, SHARED_ROW_ID } from './supabase';
 import { buildXlsx, downloadBlob } from './xlsx';
@@ -435,6 +435,9 @@ const INITIAL_GROUPS = {
 
 export default function GolfTripDashboard() {
   const [tab, setTab] = useState('leaderboard');
+  // TV view: the Leaderboard button opens it; ?tv in the URL opens it on load.
+  const [tv, setTv] = useState(() => new URLSearchParams(window.location.search).has('tv'));
+  const closeTv = useCallback(() => setTv(false), []);
   const [players, setPlayers] = useState(INITIAL_PLAYERS);
   const [scores, setScores] = useState({}); // { roundId: { playerId: [18 hole scores] } }
   const [teams, setTeams] = useState(INITIAL_TEAMS);
@@ -609,7 +612,7 @@ export default function GolfTripDashboard() {
         <TopoPattern opacity={0.04} />
         <div className="relative" style={{ zIndex: 1 }}>
         {['leaderboard', 'teams', 'payouts', 'scorecard'].includes(tab) && <ScoresUpdated at={scoresAt} scores={scores} />}
-        {tab === 'leaderboard' && <Leaderboard players={players} scores={scores} teams={teams} groups={groups} />}
+        {tab === 'leaderboard' && <Leaderboard players={players} scores={scores} teams={teams} groups={groups} onTv={() => setTv(true)} />}
         {tab === 'schedule'    && <Schedule players={players} groups={groups} setGroups={setGroups} />}
         {tab === 'roster'      && <Roster players={players} setPlayers={setPlayers} teams={teams} />}
         {tab === 'teams'       && <Teams players={players} scores={scores} teams={teams} setTeams={setTeams} groups={groups} />}
@@ -621,6 +624,370 @@ export default function GolfTripDashboard() {
 
       <Footer state={{ players, scores, teams, groups }} />
       <CountdownSplash />
+      {tv && <TvView players={players} scores={scores} teams={teams} groups={groups} scoresAt={scoresAt} onClose={closeTv} />}
+    </div>
+  );
+}
+
+// ============================================================
+// TV VIEW — full-screen standings to project on a TV
+// ============================================================
+// Sized off the viewport (container font-size in vh/vw, children in em) so
+// one 16:9 screen holds teams, Mankles, the day's cards and tomorrow's tees.
+const TV_COURSE = (id) => COURSES.find((c) => c.id === id);
+
+// Place labels with ties: [50, 48, 48, 40] → ['1', 'T2', 'T2', '4']; null → '—'.
+const tvPlaces = (keys) => keys.map((k) => {
+  if (k == null) return '—';
+  const tied = keys.filter((x) => x === k).length > 1;
+  return `${tied ? 'T' : ''}${keys.indexOf(k) + 1}`;
+});
+
+const roundHasScores = (scores, roundId) =>
+  Object.values(scores?.[roundId] || {}).some((arr) => Array.isArray(arr) && arr.some(Number.isFinite));
+
+function TvPanel({ title, sub, children, className = '' }) {
+  return (
+    <section
+      className={`rounded-md flex flex-col min-h-0 ${className}`}
+      style={{ background: 'rgba(245,239,224,0.05)', border: `1px solid rgba(201,169,97,0.35)` }}
+    >
+      <div className="flex items-baseline justify-between px-[0.9em] pt-[0.6em] pb-[0.4em]" style={{ borderBottom: `1px solid rgba(201,169,97,0.25)` }}>
+        <h2 className="font-display" style={{ fontSize: '1.45em', color: C.gold, lineHeight: 1.1 }}>{title}</h2>
+        {sub && <span className="smallcaps" style={{ fontSize: '0.7em', color: 'rgba(245,239,224,0.6)' }}>{sub}</span>}
+      </div>
+      <div className="px-[0.9em] py-[0.35em] flex-1 min-h-0 overflow-hidden" style={{ lineHeight: 1.25 }}>{children}</div>
+    </section>
+  );
+}
+
+function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
+  const autoRound = ROUNDS.reduce((acc, r, i) => (roundHasScores(scores, r.id) ? i : acc), 0);
+  const [picked, setPicked] = useState(null);
+  const ri = picked ?? autoRound;
+  const round = ROUNDS[ri];
+  const course = TV_COURSE(round.courseId);
+  const next = ROUNDS[ri + 1] || null;
+  const [now, setNow] = useState(() => Date.now());
+  const [isFull, setIsFull] = useState(false);
+
+  // Clock tick, Esc to close, body scroll lock, and keep the screen awake.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 15000);
+    const onKey = (e) => { if (e.key === 'Escape' && !document.fullscreenElement) onClose(); };
+    const onFs = () => setIsFull(!!document.fullscreenElement);
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('fullscreenchange', onFs);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    let lock = null;
+    navigator.wakeLock?.request('screen').then((l) => { lock = l; }).catch(() => {});
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('fullscreenchange', onFs);
+      document.body.style.overflow = prev;
+      lock?.release().catch(() => {});
+    };
+  }, [onClose]);
+
+  const toggleFull = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    else document.documentElement.requestFullscreen?.().catch(() => {});
+  };
+  const close = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    onClose();
+  };
+
+  const { teamTotals, mankles, roundResults } = useMemo(
+    () => computeStandings(ROUNDS, teams, players, scores, TV_COURSE, groups),
+    [players, scores, teams, groups]
+  );
+  const teamName = (id) => teams.find((t) => t.id === id)?.name || '';
+  const fmtPts = (n) => (Math.round(n * 10) / 10).toString();
+  const hcp = (p) => Math.round(p.handicap ?? 0);
+
+  // Today's team best-ball net to par (R1/R2).
+  const rr = roundResults[ri];
+  const teamToday = (teamId) => {
+    const r = rr.results?.find((x) => x.team.id === teamId);
+    if (!r || r.filled === 0) return null;
+    const par = course.holes.reduce((a, h, i) => a + (Number.isFinite(r.perHole[i]) ? 2 * h.par : 0), 0);
+    return formatToPar(r.total - par);
+  };
+
+  const teamPlaces = tvPlaces(teamTotals.map((t) => (t.played.some(Boolean) ? t.total : null)));
+  const mankPlaces = tvPlaces(mankles.map((m) => (m.filled > 0 ? `${m.total}|${m.birdies}` : null)));
+
+  // The day's cards, finished rounds first, then by net.
+  const today = players.map((p) => {
+    const arr = scores?.[round.id]?.[p.id] || [];
+    const nr = netForRound(p, round, scores, course, groups, players);
+    const sp = stablefordPoints(p, round, scores, course, groups, players);
+    const par = course.holes.reduce((a, h, i) => a + (Number.isFinite(arr[i]) ? h.par : 0), 0);
+    return {
+      p,
+      filled: nr?.filled || 0,
+      gross: nr?.gross ?? null,
+      net: nr?.net ?? null,
+      grossToPar: nr ? nr.gross - par : null,
+      netToPar: nr ? nr.net - par : null,
+      pts: sp?.filled ? hcp(p) + sp.points : null,
+      birdies: sp?.birdies || 0,
+    };
+  }).sort((a, b) => (b.filled === 18) - (a.filled === 18) || (a.netToPar ?? Infinity) - (b.netToPar ?? Infinity));
+  const todayPlaces = tvPlaces(today.map((t) => (t.filled === 18 ? t.net : null)));
+
+  // Highlights for the day, from finished cards only.
+  const done = today.filter((t) => t.filled === 18);
+  const bestBy = (rows, key, dir) => {
+    if (!rows.length) return null;
+    const best = rows.reduce((a, b) => (dir * (b[key] - a[key]) > 0 ? b : a))[key];
+    return { value: best, names: rows.filter((r) => r[key] === best).map((r) => r.p.name.split(' ')[0]) };
+  };
+  const lowGross = bestBy(done, 'gross', -1);
+  const lowNet = bestBy(done, 'net', -1);
+  const mostPts = bestBy(done, 'pts', 1);
+  const birdieTotal = today.reduce((a, t) => a + t.birdies, 0);
+  const ctp = scores?.ctp?.[round.id] || {};
+  const nameOf = (id) => players.find((p) => p.id === id)?.name || null;
+
+  const nextGroups = next ? (groups?.[next.id] || []) : [];
+  const nextSet = nextGroups.some((g) => (g.playerIds || []).some(Boolean));
+  const champTeam = !next && roundComplete(round, players, scores) ? teamTotals[0] : null;
+
+  const updated = scoresAt ? new Date(scoresAt) : null;
+  const clock = new Date(now).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+  const th = 'smallcaps text-left font-normal pb-[0.25em] pr-[0.5em]';
+  const thStyle = { fontSize: '0.68em', color: 'rgba(245,239,224,0.55)' };
+  const rowStyle = (i, lead) => ({
+    borderTop: i === 0 ? 'none' : '1px solid rgba(245,239,224,0.08)',
+    color: lead ? C.gold : C.cream,
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex flex-col font-body overflow-hidden"
+      style={{ background: `radial-gradient(ellipse at top, ${C.green} 0%, ${C.greenDk} 45%, ${C.greenDkr} 100%)`, color: C.cream, fontSize: 'min(1.7vh, 1vw)' }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="TV standings"
+    >
+      {/* Header */}
+      <header className="flex items-center gap-[1.2em] px-[1.6em] pt-[0.9em] pb-[0.7em]" style={{ borderBottom: `1px solid rgba(201,169,97,0.4)` }}>
+        <img src={logoUrl} alt="" style={{ height: '2.6em', filter: 'brightness(0) invert(1)' }} />
+        <div className="min-w-0">
+          <div className="font-display leading-none" style={{ fontSize: '2.3em' }}>DW Invitational 2026</div>
+          <div className="smallcaps mt-[0.25em]" style={{ fontSize: '0.8em', color: C.gold }}>
+            Live standings · {round.label} · {round.day} {round.date}
+          </div>
+        </div>
+        <div className="ml-auto flex items-center gap-[0.5em]">
+          {ROUNDS.map((r, i) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => setPicked(i)}
+              aria-pressed={i === ri}
+              className="smallcaps rounded px-[0.7em] py-[0.3em]"
+              style={{ fontSize: '0.75em', background: i === ri ? C.gold : 'transparent', color: i === ri ? C.greenDkr : C.cream, border: `1px solid ${i === ri ? C.gold : 'rgba(245,239,224,0.3)'}` }}
+            >
+              {r.day.slice(0, 3)}
+            </button>
+          ))}
+        </div>
+        <div className="text-right">
+          <div className="font-display tabular leading-none" style={{ fontSize: '2em' }}>{clock}</div>
+          {updated && !Number.isNaN(updated.getTime()) && (
+            <div className="italic" style={{ fontSize: '0.7em', color: 'rgba(245,239,224,0.6)' }}>
+              Scores updated {updated.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+            </div>
+          )}
+        </div>
+        <button type="button" onClick={toggleFull} aria-label={isFull ? 'Exit full screen' : 'Full screen'} className="rounded p-[0.4em]" style={{ border: '1px solid rgba(245,239,224,0.3)' }}>
+          {isFull ? <Minimize2 size="1.2em" /> : <Maximize2 size="1.2em" />}
+        </button>
+        <button type="button" onClick={close} aria-label="Close TV view" className="rounded p-[0.4em]" style={{ border: '1px solid rgba(245,239,224,0.3)' }}>
+          <X size="1.2em" />
+        </button>
+      </header>
+
+      {/* Three panels */}
+      <div className="flex-1 min-h-0 grid gap-[0.9em] px-[1.6em] pt-[0.9em]" style={{ gridTemplateColumns: '1.05fr 0.95fr 1.1fr' }}>
+        <TvPanel title="Team Standings" sub="20 · 15 · 10 · 5 · 0 · singles 15→1">
+          <table className="w-full tabular">
+            <thead>
+              <tr>
+                <th className={th} style={thStyle}>pos</th>
+                <th className={th} style={thStyle}>team</th>
+                {round.format === 'bestball2net' && <th className={`${th} text-right`} style={thStyle}>today</th>}
+                {ROUNDS.map((r, i) => <th key={r.id} className={`${th} text-right`} style={thStyle}>r{i + 1}</th>)}
+                <th className={`${th} text-right`} style={thStyle}>pts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {teamTotals.map((t, i) => {
+                const lead = teamPlaces[i] === '1' || teamPlaces[i] === 'T1';
+                const members = players.filter((p) => p.team === t.team.id);
+                return (
+                  <tr key={t.team.id} style={rowStyle(i, lead)}>
+                    <td className="py-[0.45em] pr-[0.5em] font-display align-top" style={{ fontSize: '1.35em' }}>{teamPlaces[i]}</td>
+                    <td className="py-[0.45em] pr-[0.5em] align-top">
+                      <div className="font-display leading-tight" style={{ fontSize: '1.3em' }}>{t.team.name}</div>
+                      <div style={{ fontSize: '0.72em', color: 'rgba(245,239,224,0.6)' }}>{members.map((m) => m.name.split(' ').pop()).join(' · ')}</div>
+                    </td>
+                    {round.format === 'bestball2net' && (
+                      <td className="py-[0.45em] text-right align-top font-mono" style={{ fontSize: '0.95em', color: 'rgba(245,239,224,0.8)' }} title="Today's best-ball net to par">{teamToday(t.team.id) ?? '—'}</td>
+                    )}
+                    {t.perRound.map((v, k) => (
+                      <td key={k} className="py-[0.45em] pl-[0.6em] text-right align-top font-mono" style={{ fontSize: '0.95em', color: t.played[k] ? C.cream : 'rgba(245,239,224,0.3)' }}>
+                        {t.played[k] ? fmtPts(v) : '—'}
+                      </td>
+                    ))}
+                    <td className="py-[0.45em] pl-[0.6em] text-right align-top font-display" style={{ fontSize: '1.6em', color: lead ? C.gold : C.cream }}>
+                      {t.played.some(Boolean) ? fmtPts(t.total) : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </TvPanel>
+
+        <TvPanel title="Mankles" sub="handicap + points">
+          <table className="w-full tabular">
+            <thead>
+              <tr>
+                <th className={th} style={thStyle}>pos</th>
+                <th className={th} style={thStyle}>player</th>
+                <th className={`${th} text-right`} style={thStyle}>today</th>
+                <th className={`${th} text-right`} style={thStyle}>total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mankles.map((m, i) => {
+                const lead = m.filled > 0 && (mankPlaces[i] === '1' || mankPlaces[i] === 'T1');
+                const day = m.perRound[ri];
+                return (
+                  <tr key={m.player.id} style={rowStyle(i, lead)}>
+                    <td className="py-[0.1em] pr-[0.5em] font-mono" style={{ fontSize: '0.95em' }}>{mankPlaces[i]}</td>
+                    <td className="py-[0.1em] pr-[0.5em] truncate">
+                      <span style={{ fontSize: '1.05em' }}>{m.player.name}</span>
+                      <span style={{ fontSize: '0.8em', color: 'rgba(245,239,224,0.5)' }}> ({hcp(m.player)})</span>
+                    </td>
+                    <td className="py-[0.1em] text-right font-mono" style={{ fontSize: '0.95em', color: day.played ? 'rgba(245,239,224,0.8)' : 'rgba(245,239,224,0.3)' }}>{day.played ? day.roundValue : '—'}</td>
+                    <td className="py-[0.1em] pl-[0.6em] text-right font-display" style={{ fontSize: '1.15em' }}>{m.filled > 0 ? m.total : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </TvPanel>
+
+        <TvPanel title={`${round.day}'s Scores`} sub={`${round.course} · par ${round.par}`}>
+          <table className="w-full tabular">
+            <thead>
+              <tr>
+                <th className={th} style={thStyle}>pos</th>
+                <th className={th} style={thStyle}>player</th>
+                <th className={`${th} text-right`} style={thStyle}>gross</th>
+                <th className={`${th} text-right`} style={thStyle}>net</th>
+                <th className={`${th} text-right`} style={thStyle}>to par</th>
+                <th className={`${th} text-right`} style={thStyle}>pts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {today.map((t, i) => {
+                const lead = todayPlaces[i] === '1' || todayPlaces[i] === 'T1';
+                const dim = t.filled > 0 && t.filled < 18;
+                return (
+                  <tr key={t.p.id} style={{ ...rowStyle(i, lead), opacity: dim ? 0.7 : 1 }}>
+                    <td className="py-[0.1em] pr-[0.5em] font-mono" style={{ fontSize: '0.95em' }}>{todayPlaces[i]}</td>
+                    <td className="py-[0.1em] pr-[0.5em] truncate">
+                      <span style={{ fontSize: '1.05em' }}>{t.p.name}</span>
+                      <span style={{ fontSize: '0.75em', color: 'rgba(245,239,224,0.5)' }}> · {teamName(t.p.team)}</span>
+                    </td>
+                    <td className="py-[0.1em] text-right font-mono" style={{ fontSize: '0.95em' }}>{t.gross ?? '—'}</td>
+                    <td className="py-[0.1em] pl-[0.6em] text-right font-mono" style={{ fontSize: '0.95em' }}>{t.net ?? '—'}</td>
+                    <td className="py-[0.1em] pl-[0.6em] text-right font-display" style={{ fontSize: '1.15em' }}>{t.netToPar == null ? '—' : formatToPar(t.netToPar)}</td>
+                    <td className="py-[0.1em] pl-[0.6em] text-right font-mono" style={{ fontSize: '0.95em', color: 'rgba(245,239,224,0.8)' }}>{t.pts ?? '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </TvPanel>
+      </div>
+
+      {/* Highlights strip */}
+      <div className="grid grid-cols-6 gap-[0.9em] px-[1.6em] pt-[0.9em]">
+        {[
+          ['Low gross', lowGross && `${lowGross.value} · ${lowGross.names.join(', ')}`],
+          ['Low net', lowNet && `${lowNet.value} · ${lowNet.names.join(', ')}`],
+          ['Most points', mostPts && `${mostPts.value} · ${mostPts.names.join(', ')}`],
+          ['Closest · front', nameOf(ctp.front)],
+          ['Closest · back', nameOf(ctp.back)],
+          ['Birdies today', roundHasScores(scores, round.id) ? String(birdieTotal) : null],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded px-[0.8em] py-[0.45em]" style={{ background: 'rgba(3,30,20,0.55)', border: `1px solid rgba(201,169,97,0.25)` }}>
+            <div className="smallcaps" style={{ fontSize: '0.68em', color: C.gold }}>{label}</div>
+            <div className="font-display truncate" style={{ fontSize: '1.25em' }}>{value || '—'}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tomorrow's tee sheet */}
+      <footer className="px-[1.6em] pt-[0.9em] pb-[1.1em]">
+        <div className="flex items-baseline gap-[0.8em] mb-[0.5em]">
+          <h2 className="font-display" style={{ fontSize: '1.45em', color: C.gold }}>
+            {next ? `Tomorrow · ${next.day} ${next.date} · ${next.course}` : 'Final Results'}
+          </h2>
+          {next && <span className="smallcaps" style={{ fontSize: '0.7em', color: 'rgba(245,239,224,0.6)' }}>tee times &amp; pairings</span>}
+        </div>
+        {next && nextSet && (
+          <div className="grid grid-cols-4 gap-[0.9em]">
+            {nextGroups.map((g) => (
+              <div key={g.id} className="rounded px-[0.9em] py-[0.55em]" style={{ background: 'rgba(245,239,224,0.07)', border: `1px solid rgba(201,169,97,0.35)` }}>
+                <div className="flex items-baseline justify-between mb-[0.2em]">
+                  <span className="font-display" style={{ fontSize: '1.5em', color: C.gold }}>{g.teeTime}</span>
+                  <span className="smallcaps" style={{ fontSize: '0.68em', color: 'rgba(245,239,224,0.55)' }}>{g.name}</span>
+                </div>
+                {(g.playerIds || []).filter(Boolean).map((id) => {
+                  const p = players.find((x) => x.id === id);
+                  return p ? (
+                    <div key={id} className="truncate" style={{ fontSize: '1em' }}>
+                      {p.name} <span style={{ fontSize: '0.8em', color: 'rgba(245,239,224,0.5)' }}>({hcp(p)})</span>
+                    </div>
+                  ) : null;
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+        {next && !nextSet && (
+          <div className="italic" style={{ fontSize: '1.1em', color: 'rgba(245,239,224,0.7)' }}>
+            {next.day}'s groups are set from the Mankles standings once Friday's cards are all in.
+          </div>
+        )}
+        {!next && (
+          <div className="grid grid-cols-2 gap-[0.9em]">
+            <div className="rounded px-[0.9em] py-[0.55em]" style={{ background: 'rgba(245,239,224,0.07)', border: `1px solid rgba(201,169,97,0.35)` }}>
+              <div className="smallcaps" style={{ fontSize: '0.68em', color: C.gold }}>Team champions</div>
+              <div className="font-display" style={{ fontSize: '1.6em' }}>
+                {champTeam ? `${champTeam.team.name} · ${fmtPts(champTeam.total)} pts` : 'Decided when every card is in'}
+              </div>
+            </div>
+            <div className="rounded px-[0.9em] py-[0.55em]" style={{ background: 'rgba(245,239,224,0.07)', border: `1px solid rgba(201,169,97,0.35)` }}>
+              <div className="smallcaps" style={{ fontSize: '0.68em', color: C.gold }}>Mankles champion</div>
+              <div className="font-display" style={{ fontSize: '1.6em' }}>
+                {champTeam && mankles[0] ? `${mankles[0].player.name} · ${mankles[0].total}` : 'Decided when every card is in'}
+              </div>
+            </div>
+          </div>
+        )}
+      </footer>
     </div>
   );
 }
@@ -1378,7 +1745,7 @@ function Nav({ tab, setTab }) {
 // ============================================================
 // LEADERBOARD
 // ============================================================
-function Leaderboard({ players, scores, teams, groups }) {
+function Leaderboard({ players, scores, teams, groups, onTv }) {
   const teamName = (id) => (teams || []).find((t) => t.id === id)?.name || '';
   const courseById = (id) => COURSES.find((c) => c.id === id);
   const [showRules, setShowRules] = useState(false);
@@ -1458,6 +1825,13 @@ function Leaderboard({ players, scores, teams, groups }) {
           style={{ background: 'white', color: C.greenDk, border: `1px solid ${C.rule}` }}
         >
           How Scoring Works
+        </button>
+        <button
+          onClick={onTv}
+          className="smallcaps text-[11px] px-3 py-2 rounded flex items-center gap-1.5"
+          style={{ background: 'white', color: C.greenDk, border: `1px solid ${C.rule}` }}
+        >
+          <Tv size={13} aria-hidden="true" /> TV View
         </button>
         {shareStatus && (
           <span className="text-[11px] italic" style={{ color: C.goldDk }}>{shareStatus}</span>
