@@ -643,6 +643,8 @@ const tvPlaces = (keys) => keys.map((k) => {
   return `${tied ? 'T' : ''}${keys.indexOf(k) + 1}`;
 });
 
+const TV_LONG_DATE = { r1: 'November 5th', r2: 'November 6th', r3: 'November 7th' };
+
 const roundHasScores = (scores, roundId) =>
   Object.values(scores?.[roundId] || {}).some((arr) => Array.isArray(arr) && arr.some(Number.isFinite));
 
@@ -662,9 +664,9 @@ function TvPanel({ title, sub, children, className = '' }) {
 }
 
 function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
-  const autoRound = ROUNDS.reduce((acc, r, i) => (roundHasScores(scores, r.id) ? i : acc), 0);
-  const [picked, setPicked] = useState(null);
-  const ri = picked ?? autoRound;
+  // Always the latest round with scores; the next round's tee sheet sits below,
+  // so the morning after a round it still reads right.
+  const ri = ROUNDS.reduce((acc, r, i) => (roundHasScores(scores, r.id) ? i : acc), 0);
   const round = ROUNDS[ri];
   const course = TV_COURSE(round.courseId);
   const next = ROUNDS[ri + 1] || null;
@@ -784,21 +786,7 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
             Live standings · {round.label} · {round.day} {round.date}
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-[0.5em]">
-          {ROUNDS.map((r, i) => (
-            <button
-              key={r.id}
-              type="button"
-              onClick={() => setPicked(i)}
-              aria-pressed={i === ri}
-              className="smallcaps rounded px-[0.7em] py-[0.3em]"
-              style={{ fontSize: '0.75em', background: i === ri ? C.gold : 'transparent', color: i === ri ? C.greenDkr : C.cream, border: `1px solid ${i === ri ? C.gold : 'rgba(245,239,224,0.3)'}` }}
-            >
-              {r.day.slice(0, 3)}
-            </button>
-          ))}
-        </div>
-        <div className="text-right">
+        <div className="ml-auto text-right">
           <div className="font-display tabular leading-none" style={{ fontSize: '2em' }}>{clock}</div>
           {updated && !Number.isNaN(updated.getTime()) && (
             <div className="italic" style={{ fontSize: '0.7em', color: 'rgba(245,239,224,0.6)' }}>
@@ -938,11 +926,11 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
         ))}
       </div>
 
-      {/* Tomorrow's tee sheet */}
+      {/* Next round's tee sheet */}
       <footer className="px-[1.6em] pt-[0.9em] pb-[1.1em]">
         <div className="flex items-baseline gap-[0.8em] mb-[0.5em]">
           <h2 className="font-display" style={{ fontSize: '1.45em', color: C.gold }}>
-            {next ? `Tomorrow · ${next.day} ${next.date} · ${next.course}` : 'Final Results'}
+            {next ? `${next.day}, ${TV_LONG_DATE[next.id]} · ${next.course}` : 'Final Results'}
           </h2>
           {next && <span className="smallcaps" style={{ fontSize: '0.7em', color: 'rgba(245,239,224,0.6)' }}>tee times &amp; pairings</span>}
         </div>
