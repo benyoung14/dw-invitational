@@ -643,21 +643,6 @@ const tvPlaces = (keys) => keys.map((k) => {
   return `${tied ? 'T' : ''}${keys.indexOf(k) + 1}`;
 });
 
-// Print/PDF: one landscape Letter page holding only the TV view, colors kept.
-const TV_PRINT_CSS = `
-  @media print {
-    @page { size: 11in 8.5in; margin: 0; }
-    html, body { background: ${C.greenDkr} !important; }
-    body > *:not(#root), #root > div > *:not(.tv-view) { display: none !important; }
-    .tv-view {
-      position: relative !important; inset: auto !important;
-      width: 11in !important; height: 8.5in !important; font-size: 10.5px !important;
-      -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    }
-    .tv-noprint { display: none !important; }
-  }
-`;
-
 const TV_LONG_DATE = { r1: 'November 5th', r2: 'November 6th', r3: 'November 7th' };
 
 const roundHasScores = (scores, roundId) =>
@@ -716,14 +701,52 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     onClose();
   };
-  // PDF = the browser's print dialog ("Save as PDF"), laid out by TV_PRINT_CSS.
-  // The title becomes the suggested file name.
-  const savePdf = () => {
-    const prev = document.title;
-    document.title = `DW Invitational 2026 - ${round.day} Standings`;
-    const restore = () => { document.title = prev; window.removeEventListener('afterprint', restore); };
-    window.addEventListener('afterprint', restore);
-    window.print();
+  // PDF: draw the view into a 1920×1080 copy of the page (the same 16:9 as
+  // the TV, whatever screen this is) and drop it edge to edge on a 16×9 in page.
+  const rootRef = useRef(null);
+  const [exporting, setExporting] = useState(false);
+  const savePdf = async () => {
+    if (exporting || !rootRef.current) return;
+    setExporting(true);
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas-pro'), import('jspdf')]);
+      await document.fonts?.ready;
+      // The capture ignores CSS filters, so hand it a white copy of the logo.
+      const logoEl = rootRef.current.querySelector('img');
+      const whiteLogo = await new Promise((res) => {
+        const img = new Image();
+        img.onload = () => {
+          const box = logoEl?.getBoundingClientRect();
+          const c = document.createElement('canvas');
+          c.width = Math.round((box?.width || 100) * 4);
+          c.height = Math.round((box?.height || 50) * 4);
+          const g = c.getContext('2d');
+          g.drawImage(img, 0, 0, c.width, c.height);
+          g.globalCompositeOperation = 'source-in';
+          g.fillStyle = '#fff';
+          g.fillRect(0, 0, c.width, c.height);
+          res(c.toDataURL('image/png'));
+        };
+        img.onerror = () => res(null);
+        img.src = logoUrl;
+      });
+      const canvas = await html2canvas(rootRef.current, {
+        x: 0, y: 0, width: 1920, height: 1080, windowWidth: 1920, windowHeight: 1080,
+        scrollX: 0, scrollY: 0, scale: 1.5, backgroundColor: C.greenDkr, logging: false,
+        onclone: (doc) => {
+          doc.querySelectorAll('.tv-noprint').forEach((n) => { n.style.visibility = 'hidden'; });
+          const im = doc.querySelector('.tv-view img');
+          if (im && whiteLogo) { im.src = whiteLogo; im.style.filter = 'none'; }
+        },
+      });
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [1152, 648] });
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 1152, 648);
+      pdf.save(`DW Invitational 2026 - ${round.day} Standings.pdf`);
+    } catch (e) {
+      console.warn('[tv] pdf export failed', e);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const { teamTotals, mankles, roundResults } = useMemo(
@@ -795,13 +818,13 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
 
   return (
     <div
+      ref={rootRef}
       className="tv-view fixed inset-0 z-[70] flex flex-col font-body overflow-hidden"
       style={{ background: `radial-gradient(ellipse at top, ${C.green} 0%, ${C.greenDk} 45%, ${C.greenDkr} 100%)`, color: C.cream, fontSize: 'min(1.7vh, 1vw)' }}
       role="dialog"
       aria-modal="true"
       aria-label="TV standings"
     >
-      <style>{TV_PRINT_CSS}</style>
       {/* Header */}
       <header className="flex items-center gap-[1.2em] px-[1.6em] pt-[0.9em] pb-[0.7em]" style={{ borderBottom: `1px solid rgba(201,169,97,0.4)` }}>
         <img src={logoUrl} alt="" style={{ height: '2.6em', filter: 'brightness(0) invert(1)' }} />
@@ -820,7 +843,7 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
           )}
         </div>
         <button type="button" onClick={savePdf} className="tv-noprint smallcaps rounded px-[0.7em] py-[0.4em] flex items-center gap-[0.4em]" style={{ fontSize: '0.8em', border: '1px solid rgba(245,239,224,0.3)' }}>
-          <FileDown size="1.4em" aria-hidden="true" /> PDF
+          <FileDown size="1.4em" aria-hidden="true" /> {exporting ? 'Saving…' : 'PDF'}
         </button>
         <button type="button" onClick={toggleFull} aria-label={isFull ? 'Exit full screen' : 'Full screen'} className="tv-noprint rounded p-[0.4em]" style={{ border: '1px solid rgba(245,239,224,0.3)' }}>
           {isFull ? <Minimize2 size="1.2em" /> : <Maximize2 size="1.2em" />}
