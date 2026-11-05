@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback, Fragment as ReactFragment } from 'react';
 const React = { Fragment: ReactFragment };
-import { Trophy, Calendar, Users, ClipboardList, Flag, ChevronLeft, ChevronRight, Shield, Sun, CloudSun, Cloud, CloudFog, CloudDrizzle, CloudRain, CloudLightning, Snowflake, Droplets, Wind, DollarSign, Check, ChevronDown, Tv, X, Maximize2, Minimize2 } from 'lucide-react';
+import { Trophy, Calendar, Users, ClipboardList, Flag, ChevronLeft, ChevronRight, Shield, Sun, CloudSun, Cloud, CloudFog, CloudDrizzle, CloudRain, CloudLightning, Snowflake, Droplets, Wind, DollarSign, Check, ChevronDown, Tv, X, Maximize2, Minimize2, FileDown } from 'lucide-react';
 import logoUrl from './assets/logo.svg';
 import { supabase, TABLE, SHARED_ROW_ID } from './supabase';
 import { buildXlsx, downloadBlob } from './xlsx';
@@ -643,6 +643,21 @@ const tvPlaces = (keys) => keys.map((k) => {
   return `${tied ? 'T' : ''}${keys.indexOf(k) + 1}`;
 });
 
+// Print/PDF: one landscape Letter page holding only the TV view, colors kept.
+const TV_PRINT_CSS = `
+  @media print {
+    @page { size: 11in 8.5in; margin: 0; }
+    html, body { background: ${C.greenDkr} !important; }
+    body > *:not(#root), #root > div > *:not(.tv-view) { display: none !important; }
+    .tv-view {
+      position: relative !important; inset: auto !important;
+      width: 11in !important; height: 8.5in !important; font-size: 10.5px !important;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .tv-noprint { display: none !important; }
+  }
+`;
+
 const TV_LONG_DATE = { r1: 'November 5th', r2: 'November 6th', r3: 'November 7th' };
 
 const roundHasScores = (scores, roundId) =>
@@ -700,6 +715,15 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
   const close = () => {
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     onClose();
+  };
+  // PDF = the browser's print dialog ("Save as PDF"), laid out by TV_PRINT_CSS.
+  // The title becomes the suggested file name.
+  const savePdf = () => {
+    const prev = document.title;
+    document.title = `DW Invitational 2026 - ${round.day} Standings`;
+    const restore = () => { document.title = prev; window.removeEventListener('afterprint', restore); };
+    window.addEventListener('afterprint', restore);
+    window.print();
   };
 
   const { teamTotals, mankles, roundResults } = useMemo(
@@ -771,12 +795,13 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex flex-col font-body overflow-hidden"
+      className="tv-view fixed inset-0 z-[70] flex flex-col font-body overflow-hidden"
       style={{ background: `radial-gradient(ellipse at top, ${C.green} 0%, ${C.greenDk} 45%, ${C.greenDkr} 100%)`, color: C.cream, fontSize: 'min(1.7vh, 1vw)' }}
       role="dialog"
       aria-modal="true"
       aria-label="TV standings"
     >
+      <style>{TV_PRINT_CSS}</style>
       {/* Header */}
       <header className="flex items-center gap-[1.2em] px-[1.6em] pt-[0.9em] pb-[0.7em]" style={{ borderBottom: `1px solid rgba(201,169,97,0.4)` }}>
         <img src={logoUrl} alt="" style={{ height: '2.6em', filter: 'brightness(0) invert(1)' }} />
@@ -794,10 +819,13 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
             </div>
           )}
         </div>
-        <button type="button" onClick={toggleFull} aria-label={isFull ? 'Exit full screen' : 'Full screen'} className="rounded p-[0.4em]" style={{ border: '1px solid rgba(245,239,224,0.3)' }}>
+        <button type="button" onClick={savePdf} className="tv-noprint smallcaps rounded px-[0.7em] py-[0.4em] flex items-center gap-[0.4em]" style={{ fontSize: '0.8em', border: '1px solid rgba(245,239,224,0.3)' }}>
+          <FileDown size="1.4em" aria-hidden="true" /> PDF
+        </button>
+        <button type="button" onClick={toggleFull} aria-label={isFull ? 'Exit full screen' : 'Full screen'} className="tv-noprint rounded p-[0.4em]" style={{ border: '1px solid rgba(245,239,224,0.3)' }}>
           {isFull ? <Minimize2 size="1.2em" /> : <Maximize2 size="1.2em" />}
         </button>
-        <button type="button" onClick={close} aria-label="Close TV view" className="rounded p-[0.4em]" style={{ border: '1px solid rgba(245,239,224,0.3)' }}>
+        <button type="button" onClick={close} aria-label="Close TV view" className="tv-noprint rounded p-[0.4em]" style={{ border: '1px solid rgba(245,239,224,0.3)' }}>
           <X size="1.2em" />
         </button>
       </header>
