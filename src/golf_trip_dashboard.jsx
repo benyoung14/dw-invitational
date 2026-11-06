@@ -656,7 +656,7 @@ function TvPanel({ title, sub, children, className = '' }) {
     >
       <div className="flex items-baseline justify-between px-[0.9em] pt-[0.6em] pb-[0.4em]" style={{ borderBottom: `1px solid rgba(201,169,97,0.25)` }}>
         <h2 className="font-display" style={{ fontSize: '1.45em', color: C.gold, lineHeight: 1.1 }}>{title}</h2>
-        {sub && <span className="smallcaps" style={{ fontSize: '0.7em', color: 'rgba(245,239,224,0.6)' }}>{sub}</span>}
+        {sub && <span className="smallcaps" style={{ fontSize: '0.78em', color: 'rgba(245,239,224,0.6)' }}>{sub}</span>}
       </div>
       <div className="px-[0.9em] py-[0.35em] flex-1 min-h-0 overflow-hidden" style={{ lineHeight: 1.25 }}>{children}</div>
     </section>
@@ -809,8 +809,8 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
   const updated = scoresAt ? new Date(scoresAt) : null;
   const clock = new Date(now).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
-  const th = 'smallcaps text-left font-normal pb-[0.25em] pr-[0.5em]';
-  const thStyle = { fontSize: '0.68em', color: 'rgba(245,239,224,0.55)' };
+  const th = 'smallcaps text-left font-normal pb-[0.25em] pr-[0.5em] whitespace-nowrap';
+  const thStyle = { fontSize: '0.8em', color: 'rgba(245,239,224,0.55)' };
   const rowStyle = (i, lead) => ({
     borderTop: i === 0 ? 'none' : '1px solid rgba(245,239,224,0.08)',
     color: lead ? C.gold : C.cream,
@@ -820,16 +820,16 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
     <div
       ref={rootRef}
       className="tv-view fixed inset-0 z-[70] flex flex-col font-body overflow-hidden"
-      style={{ background: `radial-gradient(ellipse at top, ${C.green} 0%, ${C.greenDk} 45%, ${C.greenDkr} 100%)`, color: C.cream, fontSize: 'min(1.7vh, 1vw)' }}
+      style={{ background: `radial-gradient(ellipse at top, ${C.green} 0%, ${C.greenDk} 45%, ${C.greenDkr} 100%)`, color: C.cream, fontSize: 'min(2.05vh, 1.153vw)' }}
       role="dialog"
       aria-modal="true"
       aria-label="TV standings"
     >
       {/* Header */}
-      <header className="flex items-center gap-[1.2em] px-[1.6em] pt-[0.9em] pb-[0.7em]" style={{ borderBottom: `1px solid rgba(201,169,97,0.4)` }}>
-        <img src={logoUrl} alt="" style={{ height: '2.6em', filter: 'brightness(0) invert(1)' }} />
+      <header className="flex items-center gap-[1.2em] px-[1.1em] pt-[0.55em] pb-[0.45em]" style={{ borderBottom: `1px solid rgba(201,169,97,0.4)` }}>
+        <img src={logoUrl} alt="" style={{ height: '2.2em', filter: 'brightness(0) invert(1)' }} />
         <div className="min-w-0">
-          <div className="font-display leading-none" style={{ fontSize: '2.3em' }}>DW Invitational 2026</div>
+          <div className="font-display leading-none" style={{ fontSize: '2em' }}>DW Invitational 2026</div>
           <div className="smallcaps mt-[0.25em]" style={{ fontSize: '0.8em', color: C.gold }}>
             Live standings · {round.label} · {round.day} {round.date}
           </div>
@@ -854,8 +854,9 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
       </header>
 
       {/* Three panels */}
-      <div className="flex-1 min-h-0 grid gap-[0.9em] px-[1.6em] pt-[0.9em]" style={{ gridTemplateColumns: '1.05fr 0.95fr 1.1fr' }}>
-        <TvPanel title="Team Standings" sub="20 · 15 · 10 · 5 · 0 · singles 15→1">
+      <div className="flex-1 min-h-0 grid gap-[0.7em] px-[1.1em] pt-[0.7em]" style={{ gridTemplateColumns: '1.05fr 0.95fr 1.1fr', gridTemplateRows: 'minmax(0, 1fr)' }}>
+        <div className="flex flex-col gap-[0.7em] min-h-0">
+        <TvPanel title="Team Standings" className="flex-none">
           <table className="w-full tabular">
             <thead>
               <tr>
@@ -872,20 +873,20 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
                 const members = players.filter((p) => p.team === t.team.id);
                 return (
                   <tr key={t.team.id} style={rowStyle(i, lead)}>
-                    <td className="py-[0.45em] pr-[0.5em] font-display align-top" style={{ fontSize: '1.35em' }}>{teamPlaces[i]}</td>
-                    <td className="py-[0.45em] pr-[0.5em] align-top">
-                      <div className="font-display leading-tight" style={{ fontSize: '1.3em' }}>{t.team.name}</div>
-                      <div style={{ fontSize: '0.72em', color: 'rgba(245,239,224,0.6)' }}>{members.map((m) => m.name.split(' ').pop()).join(' · ')}</div>
+                    <td className="py-[0.18em] pr-[0.5em] font-display align-top" style={{ fontSize: '1.35em' }}>{teamPlaces[i]}</td>
+                    <td className="py-[0.18em] pr-[0.5em] align-top">
+                      <div className="font-display leading-tight whitespace-nowrap" style={{ fontSize: '1.3em' }}>{t.team.name}</div>
+                      <div style={{ fontSize: '0.85em', color: 'rgba(245,239,224,0.65)' }}>{members.map((m) => m.name.split(' ').pop()).join(' · ')}</div>
                     </td>
                     {round.format === 'bestball2net' && (
-                      <td className="py-[0.45em] text-right align-top font-mono" style={{ fontSize: '0.95em', color: 'rgba(245,239,224,0.8)' }} title="Today's best-ball net to par">{teamToday(t.team.id) ?? '—'}</td>
+                      <td className="py-[0.18em] text-right align-top font-mono" style={{ fontSize: '0.95em', color: 'rgba(245,239,224,0.8)' }} title="Today's best-ball net to par">{teamToday(t.team.id) ?? '—'}</td>
                     )}
                     {t.perRound.map((v, k) => (
-                      <td key={k} className="py-[0.45em] pl-[0.6em] text-right align-top font-mono" style={{ fontSize: '0.95em', color: t.played[k] ? C.cream : 'rgba(245,239,224,0.3)' }}>
+                      <td key={k} className="py-[0.18em] pl-[0.6em] text-right align-top font-mono" style={{ fontSize: '0.95em', color: t.played[k] ? C.cream : 'rgba(245,239,224,0.3)' }}>
                         {t.played[k] ? fmtPts(v) : '—'}
                       </td>
                     ))}
-                    <td className="py-[0.45em] pl-[0.6em] text-right align-top font-display" style={{ fontSize: '1.6em', color: lead ? C.gold : C.cream }}>
+                    <td className="py-[0.18em] pl-[0.6em] text-right align-top font-display" style={{ fontSize: '1.6em', color: lead ? C.gold : C.cream }}>
                       {t.played.some(Boolean) ? fmtPts(t.total) : '—'}
                     </td>
                   </tr>
@@ -894,6 +895,22 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
             </tbody>
           </table>
         </TvPanel>
+        <div className="flex-1 min-h-0 rounded flex flex-col justify-evenly px-[0.9em] py-[0.1em] overflow-hidden" style={{ background: 'rgba(3,30,20,0.55)', border: `1px solid rgba(201,169,97,0.3)` }}>
+          {[
+            ['Low gross', lowGross && `${lowGross.value} · ${lowGross.names.join(', ')}`],
+            ['Low net', lowNet && `${lowNet.value} · ${lowNet.names.join(', ')}`],
+            ['Most points', mostPts && `${mostPts.value} · ${mostPts.names.join(', ')}`],
+            ['Closest · front', nameOf(ctp.front)],
+            ['Closest · back', nameOf(ctp.back)],
+            ['Birdies today', roundHasScores(scores, round.id) ? String(birdieTotal) : null],
+          ].map(([label, value]) => (
+            <div key={label} className="flex items-baseline justify-between gap-[0.8em] min-w-0">
+              <span className="smallcaps whitespace-nowrap" style={{ fontSize: '0.85em', color: C.gold }}>{label}</span>
+              <span className="font-display truncate" style={{ fontSize: '1.25em' }}>{value || '—'}</span>
+            </div>
+          ))}
+        </div>
+        </div>
 
         <TvPanel title="Mankles" sub="handicap + points">
           <table className="w-full tabular">
@@ -910,14 +927,14 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
                 const lead = m.filled > 0 && (mankPlaces[i] === '1' || mankPlaces[i] === 'T1');
                 const day = m.perRound[ri];
                 return (
-                  <tr key={m.player.id} style={rowStyle(i, lead)}>
-                    <td className="py-[0.1em] pr-[0.5em] font-mono" style={{ fontSize: '0.95em' }}>{mankPlaces[i]}</td>
-                    <td className="py-[0.1em] pr-[0.5em] truncate">
-                      <span style={{ fontSize: '1.05em' }}>{m.player.name}</span>
-                      <span style={{ fontSize: '0.8em', color: 'rgba(245,239,224,0.5)' }}> ({hcp(m.player)})</span>
+                  <tr key={m.player.id} style={{ ...rowStyle(i, lead), lineHeight: 1.12 }}>
+                    <td className="py-[0.12em] pr-[0.5em] font-mono" style={{ fontSize: '1.08em' }}>{mankPlaces[i]}</td>
+                    <td className="py-[0.12em] pr-[0.5em] truncate">
+                      <span style={{ fontSize: '1.18em' }}>{m.player.name}</span>
+                      <span style={{ fontSize: '0.85em', color: 'rgba(245,239,224,0.55)' }}> ({hcp(m.player)})</span>
                     </td>
-                    <td className="py-[0.1em] text-right font-mono" style={{ fontSize: '0.95em', color: day.played ? 'rgba(245,239,224,0.8)' : 'rgba(245,239,224,0.3)' }}>{day.played ? day.roundValue : '—'}</td>
-                    <td className="py-[0.1em] pl-[0.6em] text-right font-display" style={{ fontSize: '1.15em' }}>{m.filled > 0 ? m.total : '—'}</td>
+                    <td className="py-[0.12em] text-right font-mono" style={{ fontSize: '1.08em', color: day.played ? 'rgba(245,239,224,0.8)' : 'rgba(245,239,224,0.3)' }}>{day.played ? day.roundValue : '—'}</td>
+                    <td className="py-[0.12em] pl-[0.6em] text-right font-display" style={{ fontSize: '1.2em' }}>{m.filled > 0 ? m.total : '—'}</td>
                   </tr>
                 );
               })}
@@ -942,16 +959,16 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
                 const lead = todayPlaces[i] === '1' || todayPlaces[i] === 'T1';
                 const dim = t.filled > 0 && t.filled < 18;
                 return (
-                  <tr key={t.p.id} style={{ ...rowStyle(i, lead), opacity: dim ? 0.7 : 1 }}>
-                    <td className="py-[0.1em] pr-[0.5em] font-mono" style={{ fontSize: '0.95em' }}>{todayPlaces[i]}</td>
-                    <td className="py-[0.1em] pr-[0.5em] truncate">
-                      <span style={{ fontSize: '1.05em' }}>{t.p.name}</span>
-                      <span style={{ fontSize: '0.75em', color: 'rgba(245,239,224,0.5)' }}> · {teamName(t.p.team)}</span>
+                  <tr key={t.p.id} style={{ ...rowStyle(i, lead), opacity: dim ? 0.7 : 1, lineHeight: 1.12 }}>
+                    <td className="py-[0.12em] pr-[0.5em] font-mono" style={{ fontSize: '1.08em' }}>{todayPlaces[i]}</td>
+                    <td className="py-[0.12em] pr-[0.5em] truncate">
+                      <span style={{ fontSize: '1.18em' }}>{t.p.name}</span>
+                      <span style={{ fontSize: '0.8em', color: 'rgba(245,239,224,0.55)' }}> · {teamName(t.p.team)}</span>
                     </td>
-                    <td className="py-[0.1em] text-right font-mono" style={{ fontSize: '0.95em' }}>{t.gross ?? '—'}</td>
-                    <td className="py-[0.1em] pl-[0.6em] text-right font-mono" style={{ fontSize: '0.95em' }}>{t.net ?? '—'}</td>
-                    <td className="py-[0.1em] pl-[0.6em] text-right font-display" style={{ fontSize: '1.15em' }}>{t.netToPar == null ? '—' : formatToPar(t.netToPar)}</td>
-                    <td className="py-[0.1em] pl-[0.6em] text-right font-mono" style={{ fontSize: '0.95em', color: 'rgba(245,239,224,0.8)' }}>{t.pts ?? '—'}</td>
+                    <td className="py-[0.12em] text-right font-mono" style={{ fontSize: '1.08em' }}>{t.gross ?? '—'}</td>
+                    <td className="py-[0.12em] pl-[0.6em] text-right font-mono" style={{ fontSize: '1.08em' }}>{t.net ?? '—'}</td>
+                    <td className="py-[0.12em] pl-[0.6em] text-right font-display" style={{ fontSize: '1.2em' }}>{t.netToPar == null ? '—' : formatToPar(t.netToPar)}</td>
+                    <td className="py-[0.12em] pl-[0.6em] text-right font-mono" style={{ fontSize: '1.08em', color: 'rgba(245,239,224,0.8)' }}>{t.pts ?? '—'}</td>
                   </tr>
                 );
               })}
@@ -960,47 +977,32 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
         </TvPanel>
       </div>
 
-      {/* Highlights strip */}
-      <div className="grid grid-cols-6 gap-[0.9em] px-[1.6em] pt-[0.9em]">
-        {[
-          ['Low gross', lowGross && `${lowGross.value} · ${lowGross.names.join(', ')}`],
-          ['Low net', lowNet && `${lowNet.value} · ${lowNet.names.join(', ')}`],
-          ['Most points', mostPts && `${mostPts.value} · ${mostPts.names.join(', ')}`],
-          ['Closest · front', nameOf(ctp.front)],
-          ['Closest · back', nameOf(ctp.back)],
-          ['Birdies today', roundHasScores(scores, round.id) ? String(birdieTotal) : null],
-        ].map(([label, value]) => (
-          <div key={label} className="rounded px-[0.8em] py-[0.45em]" style={{ background: 'rgba(3,30,20,0.55)', border: `1px solid rgba(201,169,97,0.25)` }}>
-            <div className="smallcaps" style={{ fontSize: '0.68em', color: C.gold }}>{label}</div>
-            <div className="font-display truncate" style={{ fontSize: '1.25em' }}>{value || '—'}</div>
-          </div>
-        ))}
-      </div>
-
       {/* Next round's tee sheet */}
-      <footer className="px-[1.6em] pt-[0.9em] pb-[1.1em]">
+      <footer className="px-[1.1em] pt-[0.7em] pb-[1.1em]">
         <div className="flex items-baseline gap-[0.8em] mb-[0.5em]">
           <h2 className="font-display" style={{ fontSize: '1.45em', color: C.gold }}>
             {next ? `${next.day}, ${TV_LONG_DATE[next.id]} · ${next.course}` : 'Final Results'}
           </h2>
-          {next && <span className="smallcaps" style={{ fontSize: '0.7em', color: 'rgba(245,239,224,0.6)' }}>tee times &amp; pairings</span>}
+          {next && <span className="smallcaps" style={{ fontSize: '0.78em', color: 'rgba(245,239,224,0.6)' }}>tee times &amp; pairings</span>}
         </div>
         {next && nextSet && (
-          <div className="grid grid-cols-4 gap-[0.9em]">
+          <div className="grid grid-cols-4 gap-[0.7em]">
             {nextGroups.map((g) => (
               <div key={g.id} className="rounded px-[0.9em] py-[0.55em]" style={{ background: 'rgba(245,239,224,0.07)', border: `1px solid rgba(201,169,97,0.35)` }}>
                 <div className="flex items-baseline justify-between mb-[0.2em]">
                   <span className="font-display" style={{ fontSize: '1.5em', color: C.gold }}>{g.teeTime}</span>
-                  <span className="smallcaps" style={{ fontSize: '0.68em', color: 'rgba(245,239,224,0.55)' }}>{g.name}</span>
+                  <span className="smallcaps" style={{ fontSize: '0.8em', color: 'rgba(245,239,224,0.6)' }}>{g.name}</span>
                 </div>
-                {(g.playerIds || []).filter(Boolean).map((id) => {
-                  const p = players.find((x) => x.id === id);
-                  return p ? (
-                    <div key={id} className="truncate" style={{ fontSize: '1em' }}>
-                      {p.name} <span style={{ fontSize: '0.8em', color: 'rgba(245,239,224,0.5)' }}>({hcp(p)})</span>
-                    </div>
-                  ) : null;
-                })}
+                <div className="grid grid-cols-2 gap-x-[0.6em]">
+                  {(g.playerIds || []).filter(Boolean).map((id) => {
+                    const p = players.find((x) => x.id === id);
+                    return p ? (
+                      <div key={id} className="truncate" style={{ fontSize: '1.1em' }}>
+                        {p.name}
+                      </div>
+                    ) : null;
+                  })}
+                </div>
               </div>
             ))}
           </div>
@@ -1011,7 +1013,7 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
           </div>
         )}
         {!next && (
-          <div className="grid grid-cols-2 gap-[0.9em]">
+          <div className="grid grid-cols-2 gap-[0.7em]">
             <div className="rounded px-[0.9em] py-[0.55em]" style={{ background: 'rgba(245,239,224,0.07)', border: `1px solid rgba(201,169,97,0.35)` }}>
               <div className="smallcaps" style={{ fontSize: '0.68em', color: C.gold }}>Team champions</div>
               <div className="font-display" style={{ fontSize: '1.6em' }}>
