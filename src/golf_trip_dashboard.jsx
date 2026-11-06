@@ -705,6 +705,33 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
   // the TV, whatever screen this is) and drop it edge to edge on a 16×9 in page.
   const rootRef = useRef(null);
   const [exporting, setExporting] = useState(false);
+  const [pdfReady, setPdfReady] = useState(null); // { file, url } once built, on phones
+  useEffect(() => () => { if (pdfReady) URL.revokeObjectURL(pdfReady.url); }, [pdfReady]);
+  const downloadPdf = (file, url) => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+  // Phones block a download that starts seconds after the tap, so there the
+  // finished PDF waits behind a Save button: a fresh tap opens the share sheet
+  // (Save to Files, Messages, AirDrop) or falls back to a plain download.
+  const sharePdf = async () => {
+    if (!pdfReady) return;
+    const { file, url } = pdfReady;
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: file.name });
+        setPdfReady(null);
+        return;
+      } catch (e) {
+        if (e?.name === 'AbortError') return;
+      }
+    }
+    downloadPdf(file, url);
+  };
   const savePdf = async () => {
     if (exporting || !rootRef.current) return;
     setExporting(true);
@@ -741,9 +768,15 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
       });
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [1152, 648] });
       pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 1152, 648);
-      pdf.save(`DW Invitational 2026 - ${round.day} Standings.pdf`);
+      const name = `DW Invitational 2026 - ${round.day} Standings.pdf`;
+      const file = new File([pdf.output('blob')], name, { type: 'application/pdf' });
+      const url = URL.createObjectURL(file);
+      const phone = window.matchMedia?.('(pointer: coarse)').matches || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (phone) setPdfReady({ file, url });
+      else { downloadPdf(file, url); setTimeout(() => URL.revokeObjectURL(url), 60000); }
     } catch (e) {
       console.warn('[tv] pdf export failed', e);
+      window.alert("Sorry, the PDF couldn't be made on this device. Try again, or take a screenshot instead.");
     } finally {
       setExporting(false);
     }
@@ -1029,6 +1062,20 @@ function TvView({ players, scores, teams, groups, scoresAt, onClose }) {
           </div>
         )}
       </footer>
+
+      {pdfReady && (
+        <div className="tv-noprint absolute inset-0 z-10 flex items-center justify-center p-4" style={{ background: 'rgba(3,30,20,0.75)', fontSize: '16px' }} onClick={() => setPdfReady(null)}>
+          <div className="w-full max-w-sm rounded-lg p-5 text-center" style={{ background: C.greenDk, border: `1px solid ${C.gold}` }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="PDF ready">
+            <div className="font-display" style={{ fontSize: '1.5em', color: C.gold }}>Your PDF is ready</div>
+            <div className="mt-1 text-sm" style={{ color: 'rgba(245,239,224,0.75)' }}>{pdfReady.file.name}</div>
+            <button type="button" onClick={sharePdf} className="mt-4 w-full rounded py-3 font-semibold flex items-center justify-center gap-2" style={{ background: C.gold, color: C.greenDkr }}>
+              <FileDown size={18} aria-hidden="true" /> Save PDF
+            </button>
+            <a href={pdfReady.url} target="_blank" rel="noopener" className="mt-3 block text-sm underline" style={{ color: C.cream }}>Open it instead</a>
+            <button type="button" onClick={() => setPdfReady(null)} className="mt-3 text-sm" style={{ color: 'rgba(245,239,224,0.6)' }}>Close</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
