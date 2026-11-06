@@ -46,7 +46,7 @@ const INITIAL_PLAYERS = [
   { id: 'p8',  name: 'Justin Conrad',  handicap: 30, team: 't3' },
   { id: 'p9',  name: 'Shawn McMaster', handicap: 19, team: 't3' },
   { id: 'p10', name: 'Ian Dempsey',    handicap: 21, team: 't4' },
-  { id: 'p11', name: 'Nick Roy',       handicap: 21, team: 't4' },
+  { id: 'p11', name: 'Nicholas Roy',   handicap: 21, team: 't4' },
   { id: 'p12', name: 'Henry Holst',    handicap: 19, team: 't4' },
   { id: 'p13', name: 'Chad Stone',     handicap: 23, team: 't5' },
   { id: 'p14', name: 'Tom Devine',     handicap: 17, team: 't5' },
@@ -2061,7 +2061,7 @@ const RECAP_LINES = {
 // they get a recap highlight, the matching line gets this tacked on. Keyed by
 // name, then by the kind of line they were mentioned in.
 const RECAP_PLAYER_JABS = {
-  'Nick Roy': {
+  'Nicholas Roy': {
     points: 'Great day for Nick, who was still somehow difficult about it.',
     pointsTie: 'Nick was difficult about sharing it, naturally.',
     lowGross: 'Best round of the day and Nick still found a way to be difficult.',
